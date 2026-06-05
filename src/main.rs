@@ -5,6 +5,8 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
 };
+
+mod command;
 mod resp;
 
 fn main() -> std::io::Result<()> {
@@ -24,18 +26,8 @@ fn main() -> std::io::Result<()> {
                 Err(_) => continue, // TODO: handle incomplete/invalid.
             };
 
-            if let resp::Value::Array(items) = value
-                && let Some(resp::Value::Bulk(name)) = items.first()
-            {
-                match name.to_ascii_uppercase().as_slice() {
-                    b"PING" => {
-                        stream.write_all(&resp::Value::Simple(String::from("PONG")).encode())?
-                    }
-                    _ => stream.write_all(
-                        &resp::Value::Error(String::from("ERR unknown command")).encode(),
-                    )?,
-                }
-            }
+            let reply = command::dispatch(value);
+            stream.write_all(&reply.encode())?;
         }
     }
 }

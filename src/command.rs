@@ -23,6 +23,7 @@ pub fn dispatch(request: Value, store: &mut Store) -> Value {
         b"PING" => ping(args),
         b"ECHO" => echo(args),
         b"SET" => set(args, store),
+        b"GET" => get(args, store),
         _ => unknown(name, args),
     }
 }
@@ -49,6 +50,16 @@ fn set(args: &[Value], store: &mut Store) -> Value {
             Value::Simple("OK".to_string())
         }
         _ => Value::Error("ERR wrong number of arguments for 'set' command".to_string()),
+    }
+}
+
+fn get(args: &[Value], store: &Store) -> Value {
+    match args {
+        [Value::Bulk(key)] => match store.get(key) {
+            Some(value) => Value::Bulk(value.clone()),
+            None => Value::Null,
+        },
+        _ => Value::Error("ERR wrong number of arguments for 'get' command".to_string()),
     }
 }
 

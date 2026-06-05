@@ -11,6 +11,7 @@ mod resp;
 
 fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6380")?;
+    let mut store = command::Store::new();
     loop {
         let (mut stream, _) = listener.accept()?;
         let mut buf: [u8; 512] = [0; 512];
@@ -26,7 +27,7 @@ fn main() -> std::io::Result<()> {
                 Err(_) => continue, // TODO: handle incomplete/invalid.
             };
 
-            let reply = command::dispatch(value);
+            let reply = command::dispatch(value, &mut store);
             stream.write_all(&reply.encode())?;
         }
     }

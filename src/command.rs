@@ -1,10 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashMap;
+
 use crate::resp::Value;
 
+pub type Store = HashMap<Vec<u8>, Vec<u8>>;
+
 /// Route a parsed request to its command and return the reply.
-pub fn dispatch(request: Value) -> Value {
+pub fn dispatch(request: Value, store: &mut Store) -> Value {
     let items = match request {
         Value::Array(items) => items,
         _ => return Value::Error("ERR Protocol error".to_string()),
@@ -18,6 +22,7 @@ pub fn dispatch(request: Value) -> Value {
     match name.to_ascii_uppercase().as_slice() {
         b"PING" => ping(args),
         b"ECHO" => echo(args),
+        b"SET" => set(args, store),
         _ => unknown(name, args),
     }
 }
@@ -34,6 +39,16 @@ fn echo(args: &[Value]) -> Value {
     match args {
         [Value::Bulk(msg)] => Value::Bulk(msg.clone()),
         _ => Value::Error("ERR wrong number of arguments for 'echo' command".to_string()),
+    }
+}
+
+fn set(args: &[Value], store: &mut Store) -> Value {
+    match args {
+        [Value::Bulk(key), Value::Bulk(value)] => {
+            store.insert(key.clone(), value.clone());
+            Value::Simple("OK".to_string())
+        }
+        _ => Value::Error("ERR wrong number of arguments for 'set' command".to_string()),
     }
 }
 

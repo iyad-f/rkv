@@ -28,8 +28,12 @@ fn main() -> std::io::Result<()> {
                 && let Some(resp::Value::Bulk(name)) = items.first()
             {
                 match name.to_ascii_uppercase().as_slice() {
-                    b"PING" => stream.write_all(b"+PONG\r\n")?,
-                    _ => stream.write_all(b"-ERR unkown command\r\n")?,
+                    b"PING" => {
+                        stream.write_all(&resp::Value::Simple(String::from("PONG")).encode())?
+                    }
+                    _ => stream.write_all(
+                        &resp::Value::Error(String::from("ERR unknown command")).encode(),
+                    )?,
                 }
             }
         }

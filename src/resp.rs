@@ -3,6 +3,9 @@
 
 //! Types and parsing for the RESP2 wire protocol.
 
+/// The RESP line terminator.
+const CRLF: &[u8] = b"\r\n";
+
 /// A single value in the RESP2 protocol.
 ///
 /// See the [RESP protocol specification][spec] for the full definitions.
@@ -28,6 +31,7 @@ pub enum Value {
     /// Represents the null value.
     Null,
 }
+
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     /// Not enough data is available to parse a message.
@@ -90,12 +94,58 @@ impl Value {
             _ => Err(ParseError::Invalid),
         }
     }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+
+        match self {
+            Self::Simple(s) => {
+                out.push(b'+');
+                out.extend_from_slice(s.as_bytes());
+                out.extend_from_slice(CRLF);
+                out
+            }
+            Self::Error(s) => {
+                out.push(b'-');
+                out.extend_from_slice(s.as_bytes());
+                out.extend_from_slice(CRLF);
+                out
+            }
+            Self::Integer(n) => {
+                out.push(b':');
+                out.extend_from_slice(n.to_string().as_bytes());
+                out.extend_from_slice(CRLF);
+                out
+            }
+            Self::Bulk(bytes) => {
+                out.push(b'$');
+                out.extend_from_slice(bytes.len().to_string().as_bytes());
+                out.extend_from_slice(CRLF);
+                out.extend_from_slice(bytes);
+                out.extend_from_slice(CRLF);
+                out
+            }
+            Self::Array(items) => {
+                out.push(b'*');
+                out.extend_from_slice(items.len().to_string().as_bytes());
+                out.extend_from_slice(CRLF);
+                for item in items {
+                    out.extend_from_slice(&item.encode());
+                }
+                out
+            }
+            Self::Null => {
+                out.extend_from_slice(b"$-1\r\n");
+                out
+            }
+        }
+    }
 }
 
 /// Find the next `\r\n` in `input`, returning the bytes before it and the
 /// number of bytes consumed (content length + 2 for the `\r\n`).
 fn read_line(input: &[u8]) -> Result<(&[u8], usize), ParseError> {
-    match input.windows(2).position(|w| w == b"\r\n") {
+    match input.windows(2).position(|w| w == CRLF) {
         Some(pos) => Ok((&input[..pos], pos + 2)),
         None => Err(ParseError::Incomplete),
     }
@@ -200,5 +250,91 @@ mod tests {
     #[test]
     fn parse_invalid_length_array() {
         assert_eq!(Value::parse(b"*-2\r\n"), Err(ParseError::Invalid));
+    }
+
+    #[test]
+    fn encode_simple_string() {
+        assert_eq!(
+            Value::Simple("hello".to_string()).encode(),
+            b"+hello\r\n".to_vec()
+        );
+    }
+
+    #[test]
+    fn round_trip_simple_string() {
+        let value = Value::Simple("hello".to_string());
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
+    }
+
+    #[test]
+    fn encode_error() {
+        assert_eq!(
+            Value::Error("ERR".to_string()).encode(),
+            b"-ERR\r\n".to_vec()
+        );
+    }
+
+    #[test]
+    fn round_trip_error() {
+        let value = Value::Error("ERR".to_string());
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
+    }
+
+    #[test]
+    fn encode_integer() {
+        assert_eq!(Value::Integer(1000).encode(), b":1000\r\n".to_vec());
+        assert_eq!(Value::Integer(0).encode(), b":0\r\n".to_vec());
+        assert_eq!(Value::Integer(-1000).encode(), b":-1000\r\n".to_vec());
+    }
+
+    #[test]
+    fn round_trip_integer() {
+        let value = Value::Integer(1000);
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
+    }
+
+    #[test]
+    fn encode_bulk_string() {
+        assert_eq!(
+            Value::Bulk(b"hello world".to_vec()).encode(),
+            b"$11\r\nhello world\r\n".to_vec()
+        );
+        assert_eq!(Value::Bulk(b"".to_vec()).encode(), b"$0\r\n\r\n".to_vec());
+    }
+
+    #[test]
+    fn round_trip_bulk_string() {
+        let value = Value::Bulk(b"hello".to_vec());
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
+    }
+
+    #[test]
+    fn encode_null_bulk_string() {
+        assert_eq!(Value::Null.encode(), b"$-1\r\n".to_vec());
+    }
+
+    #[test]
+    fn round_trip_null() {
+        let value = Value::Null;
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
+    }
+
+    #[test]
+    fn encode_array() {
+        assert_eq!(
+            Value::Array(vec![
+                Value::Bulk(b"hello".to_vec()),
+                Value::Bulk(b"world".to_vec())
+            ])
+            .encode(),
+            b"*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n".to_vec()
+        );
+        assert_eq!(Value::Array(vec![]).encode(), b"*0\r\n".to_vec());
+    }
+
+    #[test]
+    fn round_trip_array() {
+        let value = Value::Array(vec![Value::Bulk(b"hello".to_vec()), Value::Integer(42)]);
+        assert_eq!(Value::parse(&value.encode()).unwrap().0, value);
     }
 }

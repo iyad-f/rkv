@@ -13,22 +13,22 @@ const CRLF: &[u8] = b"\r\n";
 /// [spec]: https://redis.io/docs/latest/develop/reference/protocol-spec/
 #[derive(Debug, PartialEq)]
 pub enum Value {
-    /// Represents a simple string.
+    /// A simple string.
     Simple(String),
 
-    /// Represents a simple error.
+    /// An error.
     Error(String),
 
-    /// Represents a signed 64-bit integer.
+    /// A signed 64-bit integer.
     Integer(i64),
 
-    /// Represents a bulk string (binary-safe).
+    /// A bulk string, binary-safe.
     Bulk(Vec<u8>),
 
-    /// Represents an array of values.
+    /// An array of values.
     Array(Vec<Value>),
 
-    /// Represents the null value.
+    /// The null value.
     Null,
 }
 
@@ -68,10 +68,14 @@ impl Value {
 
                 let payload_len = payload_len as usize;
                 let start = 1 + header_len;
-                let content = input
-                    .get(start..start + payload_len)
-                    .ok_or(ParseError::Incomplete)?;
-                Ok((Value::Bulk(content.to_vec()), start + payload_len + 2))
+                let end = start + payload_len;
+
+                // The payload and its trailing CRLF must both be present before
+                // we can report them consumed.
+                if input.len() < end + 2 {
+                    return Err(ParseError::Incomplete);
+                }
+                Ok((Value::Bulk(input[start..end].to_vec()), end + 2))
             }
             Some(b'*') => {
                 let (element_count, header_len) = read_int(&input[1..])?;
@@ -215,6 +219,9 @@ mod tests {
             Value::parse(b"$0\r\n\r\n").unwrap(),
             (Value::Bulk(b"".to_vec()), 6)
         );
+        // Payload present but the trailing CRLF has not fully arrived.
+        assert_eq!(Value::parse(b"$5\r\nhello"), Err(ParseError::Incomplete));
+        assert_eq!(Value::parse(b"$5\r\nhello\r"), Err(ParseError::Incomplete));
     }
 
     #[test]

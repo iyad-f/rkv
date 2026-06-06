@@ -2,6 +2,33 @@
 
 A key-value store written in Rust, wire-compatible with Redis, so it speaks the RESP protocol and works with existing Redis tooling like `redis-cli` and `redis-benchmark`.
 
+## Running
+
+```sh
+cargo run  # listens on 127.0.0.1:6380
+```
+
+From another shell:
+
+```sh
+redis-cli -p 6380 ping          # PONG
+redis-cli -p 6380 set foo bar   # OK
+redis-cli -p 6380 get foo       # "bar"
+```
+
+### Configuration
+
+Defaults are overridden by an optional config file, then by command-line flags:
+
+```sh
+cargo run -- rkv.conf       # a key/value config file
+cargo run -- --port 6390    # flags
+```
+
+Settings are `bind`, `port`, and `maxclients`, also readable and writable at runtime with `CONFIG GET` and `CONFIG SET`.
+
+Supported commands: `PING`, `ECHO`, `SET`, `GET`, `CONFIG`.
+
 ## Development
 
 ### Prerequisites
@@ -25,6 +52,12 @@ Install the git hooks:
 
 ```sh
 pre-commit install
+```
+
+### Tests
+
+```sh
+cargo test
 ```
 
 ### Commit messages

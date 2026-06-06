@@ -1,34 +1,29 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-};
+//! rkv, an in-memory key-value store.
 
 mod command;
+mod config;
+mod event_loop;
 mod resp;
+mod server;
+mod state;
+
+use config::Config;
+use event_loop::EventLoop;
+use server::Server;
 
 fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:6380")?;
-    let mut store = command::Store::new();
-    loop {
-        let (mut stream, _) = listener.accept()?;
-        let mut buf: [u8; 512] = [0; 512];
-
-        loop {
-            let n = stream.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-
-            let (value, _consumed) = match resp::Value::parse(&buf[..n]) {
-                Ok(parsed) => parsed,
-                Err(_) => continue, // TODO: handle incomplete/invalid.
-            };
-
-            let reply = command::dispatch(value, &mut store);
-            stream.write_all(&reply.encode())?;
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("config error: {e}");
+            std::process::exit(1);
         }
-    }
+    };
+
+    let mut event_loop = EventLoop::new(config.max_clients)?;
+    let mut server = Server::bind(config)?;
+    event_loop.run(&mut server)
 }

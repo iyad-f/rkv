@@ -1,1 +1,4 @@
 /target
+
+# Per-developer rust-analyzer config (e.g. a pinned cargo target).
+/rust-analyzer.toml

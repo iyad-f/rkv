@@ -7,6 +7,7 @@
 //! [`dispatch`] looks the incoming command up in [`COMMANDS`], checks its arity,
 //! and calls the handler.
 
+mod append;
 mod config;
 mod del;
 mod echo;
@@ -48,6 +49,7 @@ const COMMANDS: &[Command] = &[
     config::COMMAND,
     del::COMMAND,
     exists::COMMAND,
+    append::COMMAND,
 ];
 
 /// Routes a parsed request to its command and returns the reply.

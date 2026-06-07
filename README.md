@@ -27,7 +27,7 @@ cargo run -- --port 6390    # flags
 
 Settings are `bind`, `port`, and `maxclients`, also readable and writable at runtime with `CONFIG GET` and `CONFIG SET`.
 
-Supported commands: `PING`, `ECHO`, `SET`, `GET`, `CONFIG`.
+Supported commands: `PING`, `ECHO`, `SET`, `GET`, `DEL`, `CONFIG`.
 
 ## Development
 

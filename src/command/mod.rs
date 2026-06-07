@@ -8,6 +8,7 @@
 //! and calls the handler.
 
 mod config;
+mod del;
 mod echo;
 mod get;
 mod ping;
@@ -44,6 +45,7 @@ const COMMANDS: &[Command] = &[
     get::COMMAND,
     set::COMMAND,
     config::COMMAND,
+    del::COMMAND,
 ];
 
 /// Routes a parsed request to its command and returns the reply.
@@ -202,6 +204,45 @@ mod tests {
         assert_eq!(
             dispatch(cmd(&["GET"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'get' command".to_string())
+        );
+    }
+
+    #[test]
+    fn del_removes_existing_key() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["DEL", "foo"]), &mut state),
+            Value::Integer(1)
+        );
+        assert_eq!(dispatch(cmd(&["GET", "foo"]), &mut state), Value::Null);
+    }
+
+    #[test]
+    fn del_missing_key_returns_zero() {
+        assert_eq!(
+            dispatch(cmd(&["DEL", "missing"]), &mut state()),
+            Value::Integer(0)
+        );
+    }
+
+    #[test]
+    fn del_counts_only_present_keys() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "a", "1"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["DEL", "a", "b", "c"]), &mut state),
+            Value::Integer(1)
+        );
+    }
+
+    #[test]
+    fn del_does_not_double_count_duplicates() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "k", "v"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["DEL", "k", "k"]), &mut state),
+            Value::Integer(1)
         );
     }
 

@@ -107,11 +107,12 @@ fn unknown_command(name: &[u8], args: &[Value]) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_utils {
     use super::*;
     use crate::config::Config;
 
-    fn cmd(parts: &[&str]) -> Value {
+    /// Builds an array request from its parts, each as a bulk string.
+    pub fn cmd(parts: &[&str]) -> Value {
         Value::Array(
             parts
                 .iter()
@@ -120,171 +121,16 @@ mod tests {
         )
     }
 
-    fn state() -> State {
+    /// Creates empty state with the default configuration.
+    pub fn state() -> State {
         State::new(Config::default())
     }
+}
 
-    #[test]
-    fn ping_no_arg() {
-        assert_eq!(
-            dispatch(cmd(&["PING"]), &mut state()),
-            Value::Simple("PONG".to_string())
-        );
-    }
-
-    #[test]
-    fn ping_with_message() {
-        assert_eq!(
-            dispatch(cmd(&["PING", "hi"]), &mut state()),
-            Value::Bulk(b"hi".to_vec())
-        );
-    }
-
-    #[test]
-    fn ping_too_many_args() {
-        assert_eq!(
-            dispatch(cmd(&["PING", "a", "b"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'ping' command".to_string())
-        );
-    }
-
-    #[test]
-    fn echo_returns_argument() {
-        assert_eq!(
-            dispatch(cmd(&["ECHO", "hello"]), &mut state()),
-            Value::Bulk(b"hello".to_vec())
-        );
-    }
-
-    #[test]
-    fn echo_wrong_args() {
-        assert_eq!(
-            dispatch(cmd(&["ECHO"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'echo' command".to_string())
-        );
-    }
-
-    #[test]
-    fn set_then_get() {
-        let mut state = state();
-        assert_eq!(
-            dispatch(cmd(&["SET", "foo", "bar"]), &mut state),
-            Value::Simple("OK".to_string())
-        );
-        assert_eq!(
-            dispatch(cmd(&["GET", "foo"]), &mut state),
-            Value::Bulk(b"bar".to_vec())
-        );
-    }
-
-    #[test]
-    fn set_overwrites_existing() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "k", "v1"]), &mut state);
-        dispatch(cmd(&["SET", "k", "v2"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v2".to_vec())
-        );
-    }
-
-    #[test]
-    fn set_wrong_args() {
-        assert_eq!(
-            dispatch(cmd(&["SET", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'set' command".to_string())
-        );
-    }
-
-    #[test]
-    fn get_missing_is_null() {
-        assert_eq!(dispatch(cmd(&["GET", "nope"]), &mut state()), Value::Null);
-    }
-
-    #[test]
-    fn get_wrong_args() {
-        assert_eq!(
-            dispatch(cmd(&["GET"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'get' command".to_string())
-        );
-    }
-
-    #[test]
-    fn del_removes_existing_key() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["DEL", "foo"]), &mut state),
-            Value::Integer(1)
-        );
-        assert_eq!(dispatch(cmd(&["GET", "foo"]), &mut state), Value::Null);
-    }
-
-    #[test]
-    fn del_missing_key_returns_zero() {
-        assert_eq!(
-            dispatch(cmd(&["DEL", "missing"]), &mut state()),
-            Value::Integer(0)
-        );
-    }
-
-    #[test]
-    fn del_counts_only_present_keys() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "a", "1"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["DEL", "a", "b", "c"]), &mut state),
-            Value::Integer(1)
-        );
-    }
-
-    #[test]
-    fn del_does_not_double_count_duplicates() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "k", "v"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["DEL", "k", "k"]), &mut state),
-            Value::Integer(1)
-        );
-    }
-
-    #[test]
-    fn exists_reports_present_key() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["EXISTS", "foo"]), &mut state),
-            Value::Integer(1)
-        );
-    }
-
-    #[test]
-    fn exists_missing_key_returns_zero() {
-        assert_eq!(
-            dispatch(cmd(&["EXISTS", "nope"]), &mut state()),
-            Value::Integer(0)
-        );
-    }
-
-    #[test]
-    fn exists_counts_duplicates() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "k", "v"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["EXISTS", "k", "k"]), &mut state),
-            Value::Integer(2)
-        );
-    }
-
-    #[test]
-    fn exists_counts_only_present_keys() {
-        let mut state = state();
-        dispatch(cmd(&["SET", "a", "1"]), &mut state);
-        assert_eq!(
-            dispatch(cmd(&["EXISTS", "a", "b", "c"]), &mut state),
-            Value::Integer(1)
-        );
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_utils::{cmd, state};
 
     #[test]
     fn command_name_is_case_insensitive() {
@@ -309,41 +155,6 @@ mod tests {
         assert_eq!(
             dispatch(Value::Integer(1), &mut state()),
             Value::Error("ERR Protocol error".to_string())
-        );
-    }
-
-    #[test]
-    fn config_get_returns_value() {
-        assert_eq!(
-            dispatch(cmd(&["CONFIG", "GET", "maxclients"]), &mut state()),
-            Value::Array(vec![
-                Value::Bulk(b"maxclients".to_vec()),
-                Value::Bulk(b"1024".to_vec()),
-            ])
-        );
-    }
-
-    #[test]
-    fn config_get_unknown_is_empty() {
-        assert_eq!(
-            dispatch(cmd(&["CONFIG", "GET", "nope"]), &mut state()),
-            Value::Array(vec![])
-        );
-    }
-
-    #[test]
-    fn config_set_updates_value() {
-        let mut state = state();
-        assert_eq!(
-            dispatch(cmd(&["CONFIG", "SET", "maxclients", "50"]), &mut state),
-            Value::Simple("OK".to_string())
-        );
-        assert_eq!(
-            dispatch(cmd(&["CONFIG", "GET", "maxclients"]), &mut state),
-            Value::Array(vec![
-                Value::Bulk(b"maxclients".to_vec()),
-                Value::Bulk(b"50".to_vec()),
-            ])
         );
     }
 }

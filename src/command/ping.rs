@@ -19,3 +19,36 @@ fn ping(args: &[Value], _state: &mut State) -> Value {
         _ => super::wrong_args("ping"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::command::{
+        dispatch,
+        test_utils::{cmd, state},
+    };
+    use crate::resp::Value;
+
+    #[test]
+    fn no_arg_replies_pong() {
+        assert_eq!(
+            dispatch(cmd(&["PING"]), &mut state()),
+            Value::Simple("PONG".to_string())
+        );
+    }
+
+    #[test]
+    fn echoes_message() {
+        assert_eq!(
+            dispatch(cmd(&["PING", "hi"]), &mut state()),
+            Value::Bulk(b"hi".to_vec())
+        );
+    }
+
+    #[test]
+    fn too_many_args() {
+        assert_eq!(
+            dispatch(cmd(&["PING", "a", "b"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'ping' command".to_string())
+        );
+    }
+}

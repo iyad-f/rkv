@@ -18,3 +18,28 @@ fn echo(args: &[Value], _state: &mut State) -> Value {
         _ => super::wrong_args("echo"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::command::{
+        dispatch,
+        test_utils::{cmd, state},
+    };
+    use crate::resp::Value;
+
+    #[test]
+    fn returns_argument() {
+        assert_eq!(
+            dispatch(cmd(&["ECHO", "hello"]), &mut state()),
+            Value::Bulk(b"hello".to_vec())
+        );
+    }
+
+    #[test]
+    fn wrong_args() {
+        assert_eq!(
+            dispatch(cmd(&["ECHO"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'echo' command".to_string())
+        );
+    }
+}

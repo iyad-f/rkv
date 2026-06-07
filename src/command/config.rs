@@ -59,3 +59,47 @@ fn config_set(args: &[Value], state: &mut State) -> Value {
         Err(e) => Value::Error(format!("ERR CONFIG SET failed, {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::command::{
+        dispatch,
+        test_utils::{cmd, state},
+    };
+    use crate::resp::Value;
+
+    #[test]
+    fn get_returns_value() {
+        assert_eq!(
+            dispatch(cmd(&["CONFIG", "GET", "maxclients"]), &mut state()),
+            Value::Array(vec![
+                Value::Bulk(b"maxclients".to_vec()),
+                Value::Bulk(b"1024".to_vec()),
+            ])
+        );
+    }
+
+    #[test]
+    fn get_unknown_key_is_empty() {
+        assert_eq!(
+            dispatch(cmd(&["CONFIG", "GET", "nope"]), &mut state()),
+            Value::Array(vec![])
+        );
+    }
+
+    #[test]
+    fn set_updates_value() {
+        let mut state = state();
+        assert_eq!(
+            dispatch(cmd(&["CONFIG", "SET", "maxclients", "50"]), &mut state),
+            Value::Simple("OK".to_string())
+        );
+        assert_eq!(
+            dispatch(cmd(&["CONFIG", "GET", "maxclients"]), &mut state),
+            Value::Array(vec![
+                Value::Bulk(b"maxclients".to_vec()),
+                Value::Bulk(b"50".to_vec()),
+            ])
+        );
+    }
+}

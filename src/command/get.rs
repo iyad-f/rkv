@@ -21,3 +21,25 @@ fn get(args: &[Value], state: &mut State) -> Value {
         _ => super::wrong_args("get"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::command::{
+        dispatch,
+        test_utils::{cmd, state},
+    };
+    use crate::resp::Value;
+
+    #[test]
+    fn missing_key_is_null() {
+        assert_eq!(dispatch(cmd(&["GET", "nope"]), &mut state()), Value::Null);
+    }
+
+    #[test]
+    fn wrong_args() {
+        assert_eq!(
+            dispatch(cmd(&["GET"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'get' command".to_string())
+        );
+    }
+}

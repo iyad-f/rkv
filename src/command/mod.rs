@@ -10,6 +10,7 @@
 mod config;
 mod del;
 mod echo;
+mod exists;
 mod get;
 mod ping;
 mod set;
@@ -46,6 +47,7 @@ const COMMANDS: &[Command] = &[
     set::COMMAND,
     config::COMMAND,
     del::COMMAND,
+    exists::COMMAND,
 ];
 
 /// Routes a parsed request to its command and returns the reply.
@@ -242,6 +244,44 @@ mod tests {
         dispatch(cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(cmd(&["DEL", "k", "k"]), &mut state),
+            Value::Integer(1)
+        );
+    }
+
+    #[test]
+    fn exists_reports_present_key() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["EXISTS", "foo"]), &mut state),
+            Value::Integer(1)
+        );
+    }
+
+    #[test]
+    fn exists_missing_key_returns_zero() {
+        assert_eq!(
+            dispatch(cmd(&["EXISTS", "nope"]), &mut state()),
+            Value::Integer(0)
+        );
+    }
+
+    #[test]
+    fn exists_counts_duplicates() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "k", "v"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["EXISTS", "k", "k"]), &mut state),
+            Value::Integer(2)
+        );
+    }
+
+    #[test]
+    fn exists_counts_only_present_keys() {
+        let mut state = state();
+        dispatch(cmd(&["SET", "a", "1"]), &mut state);
+        assert_eq!(
+            dispatch(cmd(&["EXISTS", "a", "b", "c"]), &mut state),
             Value::Integer(1)
         );
     }

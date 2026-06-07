@@ -16,6 +16,9 @@ mod get;
 mod ping;
 mod set;
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 use crate::resp::Value;
 use crate::state::State;
 
@@ -52,6 +55,10 @@ const COMMANDS: &[Command] = &[
     append::COMMAND,
 ];
 
+/// Command name to command mapping.
+static COMMAND_TABLE: LazyLock<HashMap<&'static [u8], &'static Command>> =
+    LazyLock::new(|| COMMANDS.iter().map(|c| (c.name.as_bytes(), c)).collect());
+
 /// Routes a parsed request to its command and returns the reply.
 pub fn dispatch(request: Value, state: &mut State) -> Value {
     let items = match request {
@@ -65,10 +72,7 @@ pub fn dispatch(request: Value, state: &mut State) -> Value {
     };
 
     let upper = name.to_ascii_uppercase();
-    let command = match COMMANDS
-        .iter()
-        .find(|c| c.name.as_bytes() == upper.as_slice())
-    {
+    let command = match COMMAND_TABLE.get(upper.as_slice()).copied() {
         Some(command) => command,
         None => return unknown_command(name, &items[1..]),
     };

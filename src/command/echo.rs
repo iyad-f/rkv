@@ -12,9 +12,9 @@ pub const COMMAND: Command = Command {
     handler: echo,
 };
 
-fn echo(args: &[Value], _state: &mut State) -> Value {
+fn echo(args: &[Vec<u8>], _state: &mut State) -> Value {
     match args {
-        [Value::Bulk(message)] => Value::Bulk(message.clone()),
+        [message] => Value::Bulk(message.clone()),
         _ => super::wrong_args("echo"),
     }
 }
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn returns_argument() {
         assert_eq!(
-            dispatch(cmd(&["ECHO", "hello"]), &mut state()),
+            dispatch(&cmd(&["ECHO", "hello"]), &mut state()),
             Value::Bulk(b"hello".to_vec())
         );
     }
@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn wrong_args() {
         assert_eq!(
-            dispatch(cmd(&["ECHO"]), &mut state()),
+            dispatch(&cmd(&["ECHO"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'echo' command".to_string())
         );
     }

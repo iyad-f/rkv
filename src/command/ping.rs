@@ -12,10 +12,10 @@ pub const COMMAND: Command = Command {
     handler: ping,
 };
 
-fn ping(args: &[Value], _state: &mut State) -> Value {
+fn ping(args: &[Vec<u8>], _state: &mut State) -> Value {
     match args {
         [] => Value::Simple("PONG".to_string()),
-        [Value::Bulk(message)] => Value::Bulk(message.clone()),
+        [message] => Value::Bulk(message.clone()),
         _ => super::wrong_args("ping"),
     }
 }
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn no_arg_replies_pong() {
         assert_eq!(
-            dispatch(cmd(&["PING"]), &mut state()),
+            dispatch(&cmd(&["PING"]), &mut state()),
             Value::Simple("PONG".to_string())
         );
     }
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn echoes_message() {
         assert_eq!(
-            dispatch(cmd(&["PING", "hi"]), &mut state()),
+            dispatch(&cmd(&["PING", "hi"]), &mut state()),
             Value::Bulk(b"hi".to_vec())
         );
     }
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn too_many_args() {
         assert_eq!(
-            dispatch(cmd(&["PING", "a", "b"]), &mut state()),
+            dispatch(&cmd(&["PING", "a", "b"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'ping' command".to_string())
         );
     }

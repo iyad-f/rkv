@@ -12,9 +12,9 @@ pub const COMMAND: Command = Command {
     handler: append,
 };
 
-fn append(args: &[Value], state: &mut State) -> Value {
+fn append(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
-        [Value::Bulk(key), Value::Bulk(value)] => {
+        [key, value] => {
             let stored = state.store.entry(key.clone()).or_default();
             stored.extend_from_slice(value);
             Value::Integer(stored.len() as i64)
@@ -35,11 +35,11 @@ mod tests {
     fn creates_missing_key() {
         let mut state = state();
         assert_eq!(
-            dispatch(cmd(&["APPEND", "k", "hello"]), &mut state),
+            dispatch(&cmd(&["APPEND", "k", "hello"]), &mut state),
             Value::Integer(5)
         );
         assert_eq!(
-            dispatch(cmd(&["GET", "k"]), &mut state),
+            dispatch(&cmd(&["GET", "k"]), &mut state),
             Value::Bulk(b"hello".to_vec())
         );
     }
@@ -47,13 +47,13 @@ mod tests {
     #[test]
     fn appends_to_existing_value() {
         let mut state = state();
-        dispatch(cmd(&["SET", "k", "hello"]), &mut state);
+        dispatch(&cmd(&["SET", "k", "hello"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["APPEND", "k", " world"]), &mut state),
+            dispatch(&cmd(&["APPEND", "k", " world"]), &mut state),
             Value::Integer(11)
         );
         assert_eq!(
-            dispatch(cmd(&["GET", "k"]), &mut state),
+            dispatch(&cmd(&["GET", "k"]), &mut state),
             Value::Bulk(b"hello world".to_vec())
         );
     }
@@ -62,11 +62,11 @@ mod tests {
     fn returns_new_length() {
         let mut state = state();
         assert_eq!(
-            dispatch(cmd(&["APPEND", "k", "ab"]), &mut state),
+            dispatch(&cmd(&["APPEND", "k", "ab"]), &mut state),
             Value::Integer(2)
         );
         assert_eq!(
-            dispatch(cmd(&["APPEND", "k", "cde"]), &mut state),
+            dispatch(&cmd(&["APPEND", "k", "cde"]), &mut state),
             Value::Integer(5)
         );
     }

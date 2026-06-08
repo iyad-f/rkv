@@ -99,17 +99,24 @@ impl Server {
             }
 
             while !close {
-                match resp::Value::parse(&conn.buffer) {
-                    Ok((value, consumed)) => {
-                        let reply = command::dispatch(value, &mut self.state);
+                match resp::Request::parse(&conn.buffer) {
+                    Ok(resp::Request::Command { argv, consumed }) => {
+                        let reply = command::dispatch(&argv, &mut self.state);
                         if conn.stream.write_all(&reply.encode()).is_err() {
                             close = true;
                         } else {
                             conn.buffer.drain(..consumed);
                         }
                     }
-                    Err(resp::ParseError::Incomplete) => break,
-                    Err(resp::ParseError::Invalid) => close = true,
+                    Ok(resp::Request::Empty { consumed }) => {
+                        conn.buffer.drain(..consumed);
+                    }
+                    Ok(resp::Request::Incomplete) => break,
+                    Err(e) => {
+                        let reply = resp::Value::Error(format!("ERR {e}"));
+                        let _ = conn.stream.write_all(&reply.encode());
+                        close = true;
+                    }
                 }
             }
         }

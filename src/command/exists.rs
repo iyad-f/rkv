@@ -12,13 +12,11 @@ pub const COMMAND: Command = Command {
     handler: exists,
 };
 
-fn exists(args: &[Value], state: &mut State) -> Value {
+fn exists(args: &[Vec<u8>], state: &mut State) -> Value {
     let mut count = 0;
 
-    for arg in args {
-        if let Value::Bulk(key) = arg
-            && state.store.contains_key(key)
-        {
+    for key in args {
+        if state.store.contains_key(key) {
             count += 1;
         }
     }
@@ -37,9 +35,9 @@ mod tests {
     #[test]
     fn present_key_returns_one() {
         let mut state = state();
-        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
+        dispatch(&cmd(&["SET", "foo", "bar"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["EXISTS", "foo"]), &mut state),
+            dispatch(&cmd(&["EXISTS", "foo"]), &mut state),
             Value::Integer(1)
         );
     }
@@ -47,7 +45,7 @@ mod tests {
     #[test]
     fn missing_key_returns_zero() {
         assert_eq!(
-            dispatch(cmd(&["EXISTS", "nope"]), &mut state()),
+            dispatch(&cmd(&["EXISTS", "nope"]), &mut state()),
             Value::Integer(0)
         );
     }
@@ -55,9 +53,9 @@ mod tests {
     #[test]
     fn duplicate_keys_count_twice() {
         let mut state = state();
-        dispatch(cmd(&["SET", "k", "v"]), &mut state);
+        dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["EXISTS", "k", "k"]), &mut state),
+            dispatch(&cmd(&["EXISTS", "k", "k"]), &mut state),
             Value::Integer(2)
         );
     }
@@ -65,9 +63,9 @@ mod tests {
     #[test]
     fn counts_only_present_keys() {
         let mut state = state();
-        dispatch(cmd(&["SET", "a", "1"]), &mut state);
+        dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["EXISTS", "a", "b", "c"]), &mut state),
+            dispatch(&cmd(&["EXISTS", "a", "b", "c"]), &mut state),
             Value::Integer(1)
         );
     }

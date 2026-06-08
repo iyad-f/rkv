@@ -12,13 +12,11 @@ pub const COMMAND: Command = Command {
     handler: del,
 };
 
-fn del(args: &[Value], state: &mut State) -> Value {
+fn del(args: &[Vec<u8>], state: &mut State) -> Value {
     let mut count = 0;
 
-    for arg in args {
-        if let Value::Bulk(key) = arg
-            && state.store.remove(key).is_some()
-        {
+    for key in args {
+        if state.store.remove(key).is_some() {
             count += 1;
         }
     }
@@ -37,18 +35,18 @@ mod tests {
     #[test]
     fn removes_existing_key() {
         let mut state = state();
-        dispatch(cmd(&["SET", "foo", "bar"]), &mut state);
+        dispatch(&cmd(&["SET", "foo", "bar"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["DEL", "foo"]), &mut state),
+            dispatch(&cmd(&["DEL", "foo"]), &mut state),
             Value::Integer(1)
         );
-        assert_eq!(dispatch(cmd(&["GET", "foo"]), &mut state), Value::Null);
+        assert_eq!(dispatch(&cmd(&["GET", "foo"]), &mut state), Value::Null);
     }
 
     #[test]
     fn missing_key_returns_zero() {
         assert_eq!(
-            dispatch(cmd(&["DEL", "missing"]), &mut state()),
+            dispatch(&cmd(&["DEL", "missing"]), &mut state()),
             Value::Integer(0)
         );
     }
@@ -56,9 +54,9 @@ mod tests {
     #[test]
     fn counts_only_present_keys() {
         let mut state = state();
-        dispatch(cmd(&["SET", "a", "1"]), &mut state);
+        dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["DEL", "a", "b", "c"]), &mut state),
+            dispatch(&cmd(&["DEL", "a", "b", "c"]), &mut state),
             Value::Integer(1)
         );
     }
@@ -66,9 +64,9 @@ mod tests {
     #[test]
     fn duplicate_keys_count_once() {
         let mut state = state();
-        dispatch(cmd(&["SET", "k", "v"]), &mut state);
+        dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["DEL", "k", "k"]), &mut state),
+            dispatch(&cmd(&["DEL", "k", "k"]), &mut state),
             Value::Integer(1)
         );
     }

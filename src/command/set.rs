@@ -12,9 +12,9 @@ pub const COMMAND: Command = Command {
     handler: set,
 };
 
-fn set(args: &[Value], state: &mut State) -> Value {
+fn set(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
-        [Value::Bulk(key), Value::Bulk(value)] => {
+        [key, value] => {
             state.store.insert(key.clone(), value.clone());
             Value::Simple("OK".to_string())
         }
@@ -34,11 +34,11 @@ mod tests {
     fn stored_value_is_readable() {
         let mut state = state();
         assert_eq!(
-            dispatch(cmd(&["SET", "foo", "bar"]), &mut state),
+            dispatch(&cmd(&["SET", "foo", "bar"]), &mut state),
             Value::Simple("OK".to_string())
         );
         assert_eq!(
-            dispatch(cmd(&["GET", "foo"]), &mut state),
+            dispatch(&cmd(&["GET", "foo"]), &mut state),
             Value::Bulk(b"bar".to_vec())
         );
     }
@@ -46,10 +46,10 @@ mod tests {
     #[test]
     fn overwrites_existing() {
         let mut state = state();
-        dispatch(cmd(&["SET", "k", "v1"]), &mut state);
-        dispatch(cmd(&["SET", "k", "v2"]), &mut state);
+        dispatch(&cmd(&["SET", "k", "v1"]), &mut state);
+        dispatch(&cmd(&["SET", "k", "v2"]), &mut state);
         assert_eq!(
-            dispatch(cmd(&["GET", "k"]), &mut state),
+            dispatch(&cmd(&["GET", "k"]), &mut state),
             Value::Bulk(b"v2".to_vec())
         );
     }
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn wrong_args() {
         assert_eq!(
-            dispatch(cmd(&["SET", "k"]), &mut state()),
+            dispatch(&cmd(&["SET", "k"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'set' command".to_string())
         );
     }

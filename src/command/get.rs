@@ -12,9 +12,9 @@ pub const COMMAND: Command = Command {
     handler: get,
 };
 
-fn get(args: &[Value], state: &mut State) -> Value {
+fn get(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
-        [Value::Bulk(key)] => match state.store.get(key) {
+        [key] => match state.store.get(key) {
             Some(value) => Value::Bulk(value.clone()),
             None => Value::Null,
         },
@@ -32,13 +32,13 @@ mod tests {
 
     #[test]
     fn missing_key_is_null() {
-        assert_eq!(dispatch(cmd(&["GET", "nope"]), &mut state()), Value::Null);
+        assert_eq!(dispatch(&cmd(&["GET", "nope"]), &mut state()), Value::Null);
     }
 
     #[test]
     fn wrong_args() {
         assert_eq!(
-            dispatch(cmd(&["GET"]), &mut state()),
+            dispatch(&cmd(&["GET"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'get' command".to_string())
         );
     }

@@ -40,7 +40,7 @@ pub struct Command {
     pub arity: Arity,
 
     /// Runs the command, given the arguments after the name.
-    pub handler: fn(&[Value], &mut State) -> Value,
+    pub handler: fn(&[Vec<u8>], &mut State) -> Value,
 }
 
 /// Every command the server knows.
@@ -60,32 +60,26 @@ static COMMAND_TABLE: LazyLock<HashMap<&'static [u8], &'static Command>> =
     LazyLock::new(|| COMMANDS.iter().map(|c| (c.name.as_bytes(), c)).collect());
 
 /// Routes a parsed request to its command and returns the reply.
-pub fn dispatch(request: Value, state: &mut State) -> Value {
-    let items = match request {
-        Value::Array(items) => items,
-        _ => return Value::Error("ERR Protocol error".to_string()),
-    };
-
-    let name = match items.first() {
-        Some(Value::Bulk(name)) => name,
-        _ => return Value::Error("ERR Protocol error".to_string()),
-    };
+///
+/// `argv` is the command name followed by its arguments, and is never empty.
+pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
+    let name = &argv[0];
 
     let upper = name.to_ascii_uppercase();
     let command = match COMMAND_TABLE.get(upper.as_slice()).copied() {
         Some(command) => command,
-        None => return unknown_command(name, &items[1..]),
+        None => return unknown_command(name, &argv[1..]),
     };
 
     let arity_ok = match command.arity {
-        Arity::Exact(n) => items.len() == n,
-        Arity::Min(n) => items.len() >= n,
+        Arity::Exact(n) => argv.len() == n,
+        Arity::Min(n) => argv.len() >= n,
     };
     if !arity_ok {
         return wrong_args(command.name);
     }
 
-    (command.handler)(&items[1..], state)
+    (command.handler)(&argv[1..], state)
 }
 
 /// Builds the standard reply for a command called with the wrong argument count.
@@ -97,14 +91,12 @@ fn wrong_args(command: &str) -> Value {
 }
 
 /// Builds the standard reply for an unrecognized command.
-fn unknown_command(name: &[u8], args: &[Value]) -> Value {
+fn unknown_command(name: &[u8], args: &[Vec<u8>]) -> Value {
     let name = String::from_utf8_lossy(name);
 
     let mut list = String::new();
     for arg in args {
-        if let Value::Bulk(arg) = arg {
-            list.push_str(&format!("'{}' ", String::from_utf8_lossy(arg)));
-        }
+        list.push_str(&format!("'{}' ", String::from_utf8_lossy(arg)));
     }
 
     Value::Error(format!(
@@ -117,14 +109,9 @@ mod test_utils {
     use super::*;
     use crate::config::Config;
 
-    /// Builds an array request from its parts, each as a bulk string.
-    pub fn cmd(parts: &[&str]) -> Value {
-        Value::Array(
-            parts
-                .iter()
-                .map(|p| Value::Bulk(p.as_bytes().to_vec()))
-                .collect(),
-        )
+    /// Builds a command's argument vector from its parts.
+    pub fn cmd(parts: &[&str]) -> Vec<Vec<u8>> {
+        parts.iter().map(|p| p.as_bytes().to_vec()).collect()
     }
 
     /// Creates empty state with the default configuration.
@@ -141,7 +128,7 @@ mod tests {
     #[test]
     fn command_name_is_case_insensitive() {
         assert_eq!(
-            dispatch(cmd(&["ping"]), &mut state()),
+            dispatch(&cmd(&["ping"]), &mut state()),
             Value::Simple("PONG".to_string())
         );
     }
@@ -149,18 +136,10 @@ mod tests {
     #[test]
     fn unknown_command_reports_args() {
         assert_eq!(
-            dispatch(cmd(&["FOOBAR", "x"]), &mut state()),
+            dispatch(&cmd(&["FOOBAR", "x"]), &mut state()),
             Value::Error(
                 "ERR unknown command 'FOOBAR', with args beginning with: 'x' ".to_string()
             )
-        );
-    }
-
-    #[test]
-    fn non_array_request_is_protocol_error() {
-        assert_eq!(
-            dispatch(Value::Integer(1), &mut state()),
-            Value::Error("ERR Protocol error".to_string())
         );
     }
 }

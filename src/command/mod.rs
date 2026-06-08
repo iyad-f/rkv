@@ -16,6 +16,7 @@ mod errors;
 mod exists;
 mod get;
 mod incr;
+mod incrby;
 mod ping;
 mod set;
 
@@ -58,6 +59,7 @@ const COMMANDS: &[Command] = &[
     append::COMMAND,
     incr::COMMAND,
     decr::COMMAND,
+    incrby::COMMAND,
 ];
 
 /// Command name to command mapping.
@@ -87,14 +89,16 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
     (command.handler)(&argv[1..], state)
 }
 
+/// Parses bytes as a signed 64-bit integer, or `None` if they are not one.
+fn parse_i64(bytes: &[u8]) -> Option<i64> {
+    std::str::from_utf8(bytes).ok().and_then(|s| s.parse().ok())
+}
+
 /// Adds `delta` to the integer stored at `key`, treating a missing key as 0,
 /// and replies with the new value.
 fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
     let current = match state.store.get(key) {
-        Some(value) => match std::str::from_utf8(value)
-            .ok()
-            .and_then(|s| s.parse::<i64>().ok())
-        {
+        Some(value) => match parse_i64(value) {
             Some(current) => current,
             None => return errors::not_integer(),
         },

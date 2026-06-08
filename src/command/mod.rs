@@ -10,6 +10,7 @@
 mod append;
 mod config;
 mod decr;
+mod decrby;
 mod del;
 mod echo;
 mod errors;
@@ -60,6 +61,7 @@ const COMMANDS: &[Command] = &[
     incr::COMMAND,
     decr::COMMAND,
     incrby::COMMAND,
+    decrby::COMMAND,
 ];
 
 /// Command name to command mapping.

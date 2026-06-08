@@ -34,3 +34,8 @@ pub(super) fn not_integer() -> Value {
 pub(super) fn overflow() -> Value {
     Value::Error("ERR increment or decrement would overflow".to_string())
 }
+
+/// Builds the reply for a `DECRBY` decrement that cannot be negated (`i64::MIN`).
+pub(super) fn decrement_overflow() -> Value {
+    Value::Error("ERR decrement would overflow".to_string())
+}

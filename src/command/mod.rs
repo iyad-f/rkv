@@ -13,6 +13,7 @@ mod del;
 mod echo;
 mod exists;
 mod get;
+mod incr;
 mod ping;
 mod set;
 
@@ -53,6 +54,7 @@ const COMMANDS: &[Command] = &[
     del::COMMAND,
     exists::COMMAND,
     append::COMMAND,
+    incr::COMMAND,
 ];
 
 /// Command name to command mapping.
@@ -102,6 +104,16 @@ fn unknown_command(name: &[u8], args: &[Vec<u8>]) -> Value {
     Value::Error(format!(
         "ERR unknown command '{name}', with args beginning with: {list}"
     ))
+}
+
+/// Builds the standard reply for a value that is not a valid integer.
+fn not_integer() -> Value {
+    Value::Error("ERR value is not an integer or out of range".to_string())
+}
+
+/// Builds the standard reply for an integer operation that would overflow.
+fn overflow() -> Value {
+    Value::Error("ERR increment or decrement would overflow".to_string())
 }
 
 #[cfg(test)]

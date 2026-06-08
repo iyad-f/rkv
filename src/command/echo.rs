@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command};
+use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -15,7 +15,7 @@ pub const COMMAND: Command = Command {
 fn echo(args: &[Vec<u8>], _state: &mut State) -> Value {
     match args {
         [message] => Value::Bulk(message.clone()),
-        _ => super::wrong_args("echo"),
+        _ => errors::wrong_args("echo"),
     }
 }
 

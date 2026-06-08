@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command};
+use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -18,7 +18,7 @@ fn set(args: &[Vec<u8>], state: &mut State) -> Value {
             state.store.insert(key.clone(), value.clone());
             Value::Simple("OK".to_string())
         }
-        _ => super::wrong_args("set"),
+        _ => errors::wrong_args("set"),
     }
 }
 

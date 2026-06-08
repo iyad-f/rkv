@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command};
+use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -16,7 +16,7 @@ fn ping(args: &[Vec<u8>], _state: &mut State) -> Value {
     match args {
         [] => Value::Simple("PONG".to_string()),
         [message] => Value::Bulk(message.clone()),
-        _ => super::wrong_args("ping"),
+        _ => errors::wrong_args("ping"),
     }
 }
 

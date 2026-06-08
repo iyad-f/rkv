@@ -9,8 +9,10 @@
 
 mod append;
 mod config;
+mod decr;
 mod del;
 mod echo;
+mod errors;
 mod exists;
 mod get;
 mod incr;
@@ -55,6 +57,7 @@ const COMMANDS: &[Command] = &[
     exists::COMMAND,
     append::COMMAND,
     incr::COMMAND,
+    decr::COMMAND,
 ];
 
 /// Command name to command mapping.
@@ -70,7 +73,7 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
     let upper = name.to_ascii_uppercase();
     let command = match COMMAND_TABLE.get(upper.as_slice()).copied() {
         Some(command) => command,
-        None => return unknown_command(name, &argv[1..]),
+        None => return errors::unknown_command(name, &argv[1..]),
     };
 
     let arity_ok = match command.arity {
@@ -78,42 +81,34 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
         Arity::Min(n) => argv.len() >= n,
     };
     if !arity_ok {
-        return wrong_args(command.name);
+        return errors::wrong_args(command.name);
     }
 
     (command.handler)(&argv[1..], state)
 }
 
-/// Builds the standard reply for a command called with the wrong argument count.
-fn wrong_args(command: &str) -> Value {
-    Value::Error(format!(
-        "ERR wrong number of arguments for '{}' command",
-        command.to_ascii_lowercase()
-    ))
-}
+/// Adds `delta` to the integer stored at `key`, treating a missing key as 0,
+/// and replies with the new value.
+fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
+    let current = match state.store.get(key) {
+        Some(value) => match std::str::from_utf8(value)
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+        {
+            Some(current) => current,
+            None => return errors::not_integer(),
+        },
+        None => 0,
+    };
 
-/// Builds the standard reply for an unrecognized command.
-fn unknown_command(name: &[u8], args: &[Vec<u8>]) -> Value {
-    let name = String::from_utf8_lossy(name);
+    let Some(next) = current.checked_add(delta) else {
+        return errors::overflow();
+    };
 
-    let mut list = String::new();
-    for arg in args {
-        list.push_str(&format!("'{}' ", String::from_utf8_lossy(arg)));
-    }
-
-    Value::Error(format!(
-        "ERR unknown command '{name}', with args beginning with: {list}"
-    ))
-}
-
-/// Builds the standard reply for a value that is not a valid integer.
-fn not_integer() -> Value {
-    Value::Error("ERR value is not an integer or out of range".to_string())
-}
-
-/// Builds the standard reply for an integer operation that would overflow.
-fn overflow() -> Value {
-    Value::Error("ERR increment or decrement would overflow".to_string())
+    state
+        .store
+        .insert(key.to_vec(), next.to_string().into_bytes());
+    Value::Integer(next)
 }
 
 #[cfg(test)]

@@ -5,19 +5,19 @@ use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
-/// `INCR key` increments the integer at `key` by one, replying with the new value.
+/// `DECR key` decrements the integer at `key` by one, replying with the new value.
 pub const COMMAND: Command = Command {
-    name: "INCR",
+    name: "DECR",
     arity: Arity::Exact(2),
-    handler: incr,
+    handler: decr,
 };
 
-fn incr(args: &[Vec<u8>], state: &mut State) -> Value {
+fn decr(args: &[Vec<u8>], state: &mut State) -> Value {
     let [key] = args else {
-        return errors::wrong_args("incr");
+        return errors::wrong_args("decr");
     };
 
-    super::apply_delta(state, key, 1)
+    super::apply_delta(state, key, -1)
 }
 
 #[cfg(test)]
@@ -29,20 +29,20 @@ mod tests {
     use crate::resp::Value;
 
     #[test]
-    fn missing_key_starts_at_one() {
+    fn missing_key_starts_at_minus_one() {
         assert_eq!(
-            dispatch(&cmd(&["INCR", "n"]), &mut state()),
-            Value::Integer(1)
+            dispatch(&cmd(&["DECR", "n"]), &mut state()),
+            Value::Integer(-1)
         );
     }
 
     #[test]
-    fn increments_existing_value() {
+    fn decrements_existing_value() {
         let mut state = state();
         dispatch(&cmd(&["SET", "n", "5"]), &mut state);
         assert_eq!(
-            dispatch(&cmd(&["INCR", "n"]), &mut state),
-            Value::Integer(6)
+            dispatch(&cmd(&["DECR", "n"]), &mut state),
+            Value::Integer(4)
         );
     }
 
@@ -51,17 +51,17 @@ mod tests {
         let mut state = state();
         dispatch(&cmd(&["SET", "n", "abc"]), &mut state);
         assert_eq!(
-            dispatch(&cmd(&["INCR", "n"]), &mut state),
+            dispatch(&cmd(&["DECR", "n"]), &mut state),
             Value::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
     #[test]
-    fn overflow_is_error() {
+    fn underflow_is_error() {
         let mut state = state();
-        dispatch(&cmd(&["SET", "n", "9223372036854775807"]), &mut state);
+        dispatch(&cmd(&["SET", "n", "-9223372036854775808"]), &mut state);
         assert_eq!(
-            dispatch(&cmd(&["INCR", "n"]), &mut state),
+            dispatch(&cmd(&["DECR", "n"]), &mut state),
             Value::Error("ERR increment or decrement would overflow".to_string())
         );
     }
@@ -69,8 +69,8 @@ mod tests {
     #[test]
     fn wrong_args() {
         assert_eq!(
-            dispatch(&cmd(&["INCR"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'incr' command".to_string())
+            dispatch(&cmd(&["DECR"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'decr' command".to_string())
         );
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command};
+use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -19,7 +19,7 @@ fn append(args: &[Vec<u8>], state: &mut State) -> Value {
             stored.extend_from_slice(value);
             Value::Integer(stored.len() as i64)
         }
-        _ => super::wrong_args("append"),
+        _ => errors::wrong_args("append"),
     }
 }
 

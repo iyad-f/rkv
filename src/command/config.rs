@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command};
+use super::{Arity, Command, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -14,7 +14,7 @@ pub const COMMAND: Command = Command {
 
 fn config(args: &[Vec<u8>], state: &mut State) -> Value {
     let Some(subcommand) = args.first() else {
-        return super::wrong_args("config");
+        return errors::wrong_args("config");
     };
 
     match subcommand.to_ascii_uppercase().as_slice() {
@@ -33,7 +33,7 @@ fn config(args: &[Vec<u8>], state: &mut State) -> Value {
 fn config_get(args: &[Vec<u8>], state: &mut State) -> Value {
     let key = match args {
         [key] => String::from_utf8_lossy(key),
-        _ => return super::wrong_args("config|get"),
+        _ => return errors::wrong_args("config|get"),
     };
 
     match state.config.get(&key) {
@@ -49,7 +49,7 @@ fn config_get(args: &[Vec<u8>], state: &mut State) -> Value {
 fn config_set(args: &[Vec<u8>], state: &mut State) -> Value {
     let (key, value) = match args {
         [key, value] => (String::from_utf8_lossy(key), String::from_utf8_lossy(value)),
-        _ => return super::wrong_args("config|set"),
+        _ => return errors::wrong_args("config|set"),
     };
 
     match state.config.set(&key, &value) {

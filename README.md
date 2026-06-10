@@ -6,6 +6,10 @@ A key-value store written in Rust, wire-compatible with Redis, so it speaks the 
 
 To learn Rust and internals of redis.
 
+## Goal
+
+I am not really sure how much of redis i want/will be able to replicate, both in terms of backend logic details and what the client sees.
+
 ## Running
 
 ```sh

@@ -15,11 +15,14 @@ mod del;
 mod echo;
 mod errors;
 mod exists;
+mod expire;
 mod get;
 mod incr;
 mod incrby;
+mod persist;
 mod ping;
 mod set;
+mod ttl;
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -62,6 +65,9 @@ const COMMANDS: &[Command] = &[
     decr::COMMAND,
     incrby::COMMAND,
     decrby::COMMAND,
+    expire::COMMAND,
+    ttl::COMMAND,
+    persist::COMMAND,
 ];
 
 /// Command name to command mapping.
@@ -113,7 +119,7 @@ fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
 
     state
         .store
-        .insert(key.to_vec(), next.to_string().into_bytes());
+        .update(key.to_vec(), next.to_string().into_bytes());
     Value::Integer(next)
 }
 

@@ -3,12 +3,7 @@
 
 //! The server's shared state.
 
-use std::collections::HashMap;
-
-use crate::config::Config;
-
-/// The key-value store.
-pub type Store = HashMap<Vec<u8>, Vec<u8>>;
+use crate::{config::Config, store::Store};
 
 /// The shared state commands read and modify.
 pub struct State {

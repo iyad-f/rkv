@@ -39,3 +39,8 @@ pub(super) fn overflow() -> Value {
 pub(super) fn decrement_overflow() -> Value {
     Value::Error("ERR decrement would overflow".to_string())
 }
+
+/// Builds the reply for an expire command given a time that overflows.
+pub(super) fn invalid_expire_time(command: &str) -> Value {
+    Value::Error(format!("ERR invalid expire time in '{command}' command"))
+}

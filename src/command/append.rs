@@ -15,9 +15,11 @@ pub const COMMAND: Command = Command {
 fn append(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
         [key, value] => {
-            let stored = state.store.entry(key.clone()).or_default();
+            let mut stored = state.store.get(key).cloned().unwrap_or_default();
             stored.extend_from_slice(value);
-            Value::Integer(stored.len() as i64)
+            let len = stored.len() as i64;
+            state.store.update(key.clone(), stored);
+            Value::Integer(len)
         }
         _ => errors::wrong_args("append"),
     }

@@ -9,6 +9,7 @@ mod event_loop;
 mod resp;
 mod server;
 mod state;
+mod store;
 
 use config::Config;
 use event_loop::EventLoop;

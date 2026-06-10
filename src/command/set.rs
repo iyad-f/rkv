@@ -15,7 +15,7 @@ pub const COMMAND: Command = Command {
 fn set(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
         [key, value] => {
-            state.store.insert(key.clone(), value.clone());
+            state.store.set(key.clone(), value.clone());
             Value::Simple("OK".to_string())
         }
         _ => errors::wrong_args("set"),

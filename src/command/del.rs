@@ -16,7 +16,7 @@ fn del(args: &[Vec<u8>], state: &mut State) -> Value {
     let mut count = 0;
 
     for key in args {
-        if state.store.remove(key).is_some() {
+        if state.store.remove(key) {
             count += 1;
         }
     }

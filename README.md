@@ -2,6 +2,10 @@
 
 A key-value store written in Rust, wire-compatible with Redis, so it speaks the RESP protocol and works with existing Redis tooling like `redis-cli` and `redis-benchmark`.
 
+## Why?
+
+To learn Rust and internals of redis.
+
 ## Running
 
 ```sh

@@ -3,7 +3,7 @@
 
 //! The key-value store and the expiry deadlines that drive key expiration.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::dict::Dict;
 use crate::prng::Prng;
@@ -97,22 +97,28 @@ impl Store {
 
     /// Actively reaps expired keys by sampling keys that have a deadline and
     /// removing those whose deadline has passed, repeating while a sample comes
-    /// back mostly stale so a store full of expired keys clears in one cycle.
+    /// back mostly stale, bounded by a time limit so a large backlog clears
+    /// across cycles instead of stalling the caller.
     pub fn expire_cycle(&mut self, prng: &mut Prng) {
         // This runs on the same thread that serves client commands, so scanning
         // every key that has a deadline would stall request handling. Instead we
-        // estimate from a random sample. The share of the sample that turns out
-        // expired approximates the share across all keys with a deadline. A mostly
-        // stale sample, more than `STALE_THRESHOLD_PERCENT`% expired, means many
-        // expired keys likely remain, so we sample again, while a mostly fresh one
-        // means little is left to reclaim, so we stop.
+        // estimate from a random sample of up to `SAMPLE_SIZE` keys. The share of
+        // the sample that turns out expired approximates the share across all keys
+        // with a deadline. A mostly stale sample, more than `STALE_THRESHOLD_PERCENT`%
+        // expired, means many expired keys likely remain, so we sample again, while
+        // a mostly fresh one means little is left to reclaim, so we stop. Repeated
+        // sampling can still run long when a large share expired at once, so each
+        // cycle is capped by `TIME_LIMIT`, and any remaining keys are reclaimed on
+        // later ticks.
 
         const SAMPLE_SIZE: usize = 20;
         const STALE_THRESHOLD_PERCENT: usize = 25;
+        const TIME_LIMIT: Duration = Duration::from_millis(25);
 
+        let start = Instant::now();
         let now = Self::now();
 
-        while !self.deadlines.is_empty() {
+        while !self.deadlines.is_empty() && start.elapsed() < TIME_LIMIT {
             let count = SAMPLE_SIZE.min(self.deadlines.len());
             let sample: Vec<Vec<u8>> = self
                 .deadlines

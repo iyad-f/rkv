@@ -10,17 +10,19 @@
 
 mod io_multiplexer;
 
+use std::time::{Duration, Instant};
+
 use io_multiplexer::{IoMultiplexer, Poller};
 
 pub use io_multiplexer::{Event, Operation};
 
-/// Reacts to the descriptors an [`EventLoop`] reports as ready.
+/// The application an [`EventLoop`] drives, through I/O events and a periodic tick.
 pub trait EventHandler {
-    /// Registers the handler's initial interests before the loop starts.
-    fn register(&mut self, event_loop: &mut EventLoop) -> std::io::Result<()>;
+    /// Handles one ready I/O `event`. Returning an error stops the loop.
+    fn on_io(&mut self, event: Event, event_loop: &mut EventLoop) -> std::io::Result<()>;
 
-    /// Handles one ready `event`. Returning an error stops the loop.
-    fn handle(&mut self, event: Event, event_loop: &mut EventLoop) -> std::io::Result<()>;
+    /// Runs periodic background work, called on a roughly fixed interval.
+    fn on_tick(&mut self) {}
 }
 
 /// A single-threaded event loop driving an [`EventHandler`].
@@ -45,15 +47,30 @@ impl EventLoop {
         self.poller.subscribe(event)
     }
 
-    /// Registers the handler, then dispatches ready descriptors until it errors.
+    /// Dispatches ready I/O events, firing the handler's periodic tick on a
+    /// roughly fixed interval, until it errors.
     pub fn run(&mut self, handler: &mut impl EventHandler) -> std::io::Result<()> {
-        handler.register(self)?;
+        const TICK: Duration = Duration::from_millis(100);
 
         let mut ready = Vec::with_capacity(self.max_events);
+        let mut next_tick = Instant::now() + TICK;
         loop {
-            self.poller.poll(None, &mut ready)?;
+            // Cap the poll timeout at the next tick so one thread serves both I/O
+            // and the timer. poll returns when I/O is ready or when the tick comes
+            // due, whichever is first, and an overdue tick saturates to a zero
+            // timeout so poll returns at once.
+            let timeout = next_tick.saturating_duration_since(Instant::now());
+            self.poller.poll(Some(timeout), &mut ready)?;
+
+            // Handle ready I/O before the tick so client requests never wait
+            // for background maintenance.
             for &event in &ready {
-                handler.handle(event, self)?;
+                handler.on_io(event, self)?;
+            }
+
+            if Instant::now() >= next_tick {
+                handler.on_tick();
+                next_tick = Instant::now() + TICK;
             }
         }
     }

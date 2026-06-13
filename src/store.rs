@@ -3,10 +3,10 @@
 
 //! The key-value store and the expiry deadlines that drive key expiration.
 
-use std::{
-    collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::dict::Dict;
+use crate::prng::Prng;
 
 /// The expiry state of a key.
 pub enum Expiry {
@@ -23,31 +23,31 @@ pub enum Expiry {
 /// A key-value store that tracks an optional expiry deadline per key.
 pub struct Store {
     /// The stored values.
-    data: HashMap<Vec<u8>, Vec<u8>>,
+    data: Dict<Vec<u8>, Vec<u8>>,
 
     /// Absolute deadlines, in milliseconds since the Unix epoch, for the keys
     /// that have an expiry. A key without an expiry is absent.
-    deadlines: HashMap<Vec<u8>, i64>,
+    deadlines: Dict<Vec<u8>, i64>,
 }
 
 impl Store {
     /// Creates an empty store.
     pub fn new() -> Self {
         Self {
-            data: HashMap::new(),
-            deadlines: HashMap::new(),
+            data: Dict::new(16),
+            deadlines: Dict::new(16),
         }
     }
 
     /// Returns the value at `key`, or `None` if it is missing or has expired.
     pub fn get(&mut self, key: &[u8]) -> Option<&Vec<u8>> {
-        self.remove_if_expired(key);
+        self.remove_if_expired(key, Self::now());
         self.data.get(key)
     }
 
     /// Reports whether `key` exists, treating an expired key as missing.
     pub fn contains_key(&mut self, key: &[u8]) -> bool {
-        self.remove_if_expired(key);
+        self.remove_if_expired(key, Self::now());
         self.data.contains_key(key)
     }
 
@@ -65,7 +65,7 @@ impl Store {
     /// Removes `key` and any expiry, returning whether it existed. An expired
     /// key counts as already gone.
     pub fn remove(&mut self, key: &[u8]) -> bool {
-        self.remove_if_expired(key);
+        self.remove_if_expired(key, Self::now());
         self.deadlines.remove(key);
         self.data.remove(key).is_some()
     }
@@ -95,6 +95,45 @@ impl Store {
         }
     }
 
+    /// Actively reaps expired keys by sampling keys that have a deadline and
+    /// removing those whose deadline has passed, repeating while a sample comes
+    /// back mostly stale so a store full of expired keys clears in one cycle.
+    pub fn expire_cycle(&mut self, prng: &mut Prng) {
+        // This runs on the same thread that serves client commands, so scanning
+        // every key that has a deadline would stall request handling. Instead we
+        // estimate from a random sample. The share of the sample that turns out
+        // expired approximates the share across all keys with a deadline. A mostly
+        // stale sample, more than `STALE_THRESHOLD_PERCENT`% expired, means many
+        // expired keys likely remain, so we sample again, while a mostly fresh one
+        // means little is left to reclaim, so we stop.
+
+        const SAMPLE_SIZE: usize = 20;
+        const STALE_THRESHOLD_PERCENT: usize = 25;
+
+        let now = Self::now();
+
+        while !self.deadlines.is_empty() {
+            let count = SAMPLE_SIZE.min(self.deadlines.len());
+            let sample: Vec<Vec<u8>> = self
+                .deadlines
+                .random_keys(prng, count)
+                .into_iter()
+                .cloned()
+                .collect();
+
+            let mut expired = 0;
+            for key in &sample {
+                if self.remove_if_expired(key, now) {
+                    expired += 1;
+                }
+            }
+
+            if expired * 100 <= sample.len() * STALE_THRESHOLD_PERCENT {
+                break;
+            }
+        }
+    }
+
     /// The current wall-clock time, in milliseconds since the Unix epoch.
     pub fn now() -> i64 {
         SystemTime::now()
@@ -103,14 +142,19 @@ impl Store {
             .as_millis() as i64
     }
 
-    /// Removes `key` from both maps if its deadline has passed.
-    fn remove_if_expired(&mut self, key: &[u8]) {
-        if let Some(deadline) = self.deadlines.get(key)
-            && Self::now() > *deadline
+    /// Removes `key` from both maps if `now` is past its deadline, returning
+    /// whether it was removed.
+    fn remove_if_expired(&mut self, key: &[u8], now: i64) -> bool {
+        if self
+            .deadlines
+            .get(key)
+            .is_some_and(|&deadline| now > deadline)
         {
             self.data.remove(key);
             self.deadlines.remove(key);
+            return true;
         }
+        false
     }
 }
 
@@ -174,5 +218,57 @@ mod tests {
         store.set_expiry(b"k", Store::now() + 100_000);
         assert!(store.persist(b"k"));
         assert!(matches!(store.expiry(b"k"), Expiry::Never));
+    }
+
+    #[test]
+    fn expire_cycle_reaps_a_past_deadline() {
+        let mut store = Store::new();
+        let mut prng = Prng::new(0);
+
+        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set_expiry(b"k", 1);
+        store.expire_cycle(&mut prng);
+
+        assert_eq!(store.data.len(), 0);
+        assert_eq!(store.deadlines.len(), 0);
+    }
+
+    #[test]
+    fn expire_cycle_keeps_a_future_deadline() {
+        let mut store = Store::new();
+        let mut prng = Prng::new(0);
+
+        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set_expiry(b"k", Store::now() + 100_000);
+        store.expire_cycle(&mut prng);
+
+        assert_eq!(store.data.len(), 1);
+        assert_eq!(store.deadlines.len(), 1);
+    }
+
+    #[test]
+    fn expire_cycle_leaves_keys_without_a_deadline() {
+        let mut store = Store::new();
+        let mut prng = Prng::new(0);
+
+        store.set(b"k".to_vec(), b"v".to_vec());
+        store.expire_cycle(&mut prng);
+
+        assert_eq!(store.data.len(), 1);
+    }
+
+    #[test]
+    fn expire_cycle_reaps_past_the_sample_size_when_mostly_stale() {
+        let mut store = Store::new();
+        let mut prng = Prng::new(0);
+
+        for i in 0..100u8 {
+            store.set(vec![i], b"v".to_vec());
+            store.set_expiry(&[i], 1);
+        }
+        store.expire_cycle(&mut prng);
+
+        assert_eq!(store.data.len(), 0);
+        assert_eq!(store.deadlines.len(), 0);
     }
 }

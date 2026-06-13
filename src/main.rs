@@ -5,7 +5,9 @@
 
 mod command;
 mod config;
+mod dict;
 mod event_loop;
+mod prng;
 mod resp;
 mod server;
 mod state;
@@ -26,5 +28,7 @@ fn main() -> std::io::Result<()> {
 
     let mut event_loop = EventLoop::new(config.max_clients)?;
     let mut server = Server::bind(config)?;
+
+    event_loop.subscribe(server.listen_interest())?;
     event_loop.run(&mut server)
 }

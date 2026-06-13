@@ -125,22 +125,27 @@ impl Server {
             self.connections.remove(&fd);
         }
     }
+
+    /// The listener's read interest, for the loop to subscribe before running.
+    pub fn listen_interest(&self) -> Event {
+        Event {
+            fd: self.listener.as_raw_fd(),
+            op: Operation::Read,
+        }
+    }
 }
 
 impl EventHandler for Server {
-    fn register(&mut self, event_loop: &mut EventLoop) -> std::io::Result<()> {
-        event_loop.subscribe(Event {
-            fd: self.listener.as_raw_fd(),
-            op: Operation::Read,
-        })
-    }
-
-    fn handle(&mut self, event: Event, event_loop: &mut EventLoop) -> std::io::Result<()> {
+    fn on_io(&mut self, event: Event, event_loop: &mut EventLoop) -> std::io::Result<()> {
         if event.fd == self.listener.as_raw_fd() {
             self.accept(event_loop)
         } else {
             self.handle_client(event.fd);
             Ok(())
         }
+    }
+
+    fn on_tick(&mut self) {
+        self.state.store.expire_cycle(&mut self.state.prng);
     }
 }

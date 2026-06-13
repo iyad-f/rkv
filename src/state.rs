@@ -3,7 +3,9 @@
 
 //! The server's shared state.
 
-use crate::{config::Config, store::Store};
+use std::hash::{BuildHasher, Hasher, RandomState};
+
+use crate::{config::Config, prng::Prng, store::Store};
 
 /// The shared state commands read and modify.
 pub struct State {
@@ -12,14 +14,19 @@ pub struct State {
 
     /// The server configuration.
     pub config: Config,
+
+    /// The shared random number generator, used for key sampling.
+    pub prng: Prng,
 }
 
 impl State {
     /// Creates empty state with the given configuration.
     pub fn new(config: Config) -> Self {
+        let seed = RandomState::new().build_hasher().finish();
         Self {
             store: Store::new(),
             config,
+            prng: Prng::new(seed),
         }
     }
 }

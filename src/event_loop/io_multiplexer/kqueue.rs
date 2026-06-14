@@ -127,7 +127,13 @@ impl IoMultiplexer for Kqueue {
         };
 
         if n < 0 {
-            return Err(std::io::Error::last_os_error());
+            let err = std::io::Error::last_os_error();
+            // A signal interrupting the wait is not a failure, so report no events.
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                events.clear();
+                return Ok(());
+            }
+            return Err(err);
         }
 
         events.clear();

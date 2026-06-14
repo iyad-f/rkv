@@ -11,6 +11,7 @@ mod event_loop;
 mod prng;
 mod resp;
 mod server;
+mod signal;
 mod state;
 mod store;
 
@@ -26,6 +27,8 @@ fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
+
+    signal::install()?;
 
     let mut event_loop = EventLoop::new(config.max_clients)?;
     let mut server = Server::bind(config)?;

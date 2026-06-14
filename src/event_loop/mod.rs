@@ -13,6 +13,8 @@ mod io_multiplexer;
 use std::os::fd::RawFd;
 use std::time::{Duration, Instant};
 
+use crate::signal;
+
 use io_multiplexer::{IoMultiplexer, Poller};
 
 pub use io_multiplexer::{Event, Interest, Operation};
@@ -59,13 +61,13 @@ impl EventLoop {
     }
 
     /// Dispatches ready I/O events, firing the handler's periodic tick on a
-    /// roughly fixed interval, until it errors.
+    /// roughly fixed interval, until a shutdown is requested or it errors.
     pub fn run(&mut self, handler: &mut impl EventHandler) -> std::io::Result<()> {
         const TICK: Duration = Duration::from_millis(100);
 
         let mut ready = Vec::with_capacity(self.max_events);
         let mut next_tick = Instant::now() + TICK;
-        loop {
+        while !signal::shutdown_requested() {
             // Cap the poll timeout at the next tick so one thread serves both I/O
             // and the timer. poll returns when I/O is ready or when the tick comes
             // due, whichever is first, and an overdue tick saturates to a zero
@@ -84,5 +86,7 @@ impl EventLoop {
                 next_tick = Instant::now() + TICK;
             }
         }
+
+        Ok(())
     }
 }

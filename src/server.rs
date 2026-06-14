@@ -3,34 +3,21 @@
 
 //! The server that accepts connections and serves commands.
 //!
-//! `Server` is the [`EventHandler`] driven by the [`EventLoop`]. It owns the
-//! listener, the shared state, and the live connections.
+//! `Server` is the [`EventHandler`] the [`EventLoop`] drives. It parses
+//! requests, dispatches commands, and queues replies.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::os::fd::{AsRawFd, RawFd};
 
+use crate::client::Client;
 use crate::command;
 use crate::config::Config;
-use crate::event_loop::{Event, EventHandler, EventLoop, Operation};
+use crate::event_loop::{Event, EventHandler, EventLoop, Interest, Operation};
 use crate::resp;
 use crate::state::State;
 
-/// How many bytes to read from a socket per `read` call.
-const READ_CHUNK: usize = 16 * 1024;
-
-/// A connected client and the bytes read from it but not yet parsed.
-struct Connection {
-    /// The client's TCP stream.
-    stream: TcpStream,
-
-    /// Bytes received but not yet consumed by a complete command, which may
-    /// arrive split across reads.
-    buffer: Vec<u8>,
-}
-
-/// The event-driven server, holding the listener, shared state, and connections.
+/// The event-driven server, holding the listener, shared state, and clients.
 pub struct Server {
     /// The listening socket new clients connect to.
     listener: TcpListener,
@@ -38,8 +25,8 @@ pub struct Server {
     /// The shared state every command operates on.
     state: State,
 
-    /// Live connections, keyed by file descriptor.
-    connections: HashMap<RawFd, Connection>,
+    /// Live clients, keyed by file descriptor.
+    clients: HashMap<RawFd, Client>,
 }
 
 impl Server {
@@ -51,7 +38,7 @@ impl Server {
         Ok(Self {
             listener,
             state: State::new(config),
-            connections: HashMap::new(),
+            clients: HashMap::new(),
         })
     }
 
@@ -60,22 +47,10 @@ impl Server {
         loop {
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    stream.set_nonblocking(true)?;
-                    stream.set_nodelay(true)?;
-
-                    let fd = stream.as_raw_fd();
-                    event_loop.subscribe(Event {
-                        fd,
-                        op: Operation::Read,
-                    })?;
-
-                    self.connections.insert(
-                        fd,
-                        Connection {
-                            stream,
-                            buffer: Vec::new(),
-                        },
-                    );
+                    let client = Client::new(stream)?;
+                    let fd = client.fd();
+                    event_loop.register(fd, Interest::READABLE)?;
+                    self.clients.insert(fd, client);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(e),
@@ -84,64 +59,110 @@ impl Server {
         Ok(())
     }
 
-    /// Reads from `fd`, then parses and replies to each complete command, dropping
-    /// the connection on end-of-stream, error, or invalid input.
-    fn handle_client(&mut self, fd: RawFd) {
+    /// Serves a readable client by reading, parsing each complete command,
+    /// dispatching it, and flushing the queued replies. Drops the client on
+    /// end-of-stream, error, or invalid input.
+    fn serve_client(&mut self, fd: RawFd, event_loop: &mut EventLoop) -> std::io::Result<()> {
+        let Some(client) = self.clients.get_mut(&fd) else {
+            return Ok(());
+        };
+
         let mut close = false;
+        if !client.fill() {
+            close = true;
+        }
 
-        if let Some(conn) = self.connections.get_mut(&fd) {
-            let mut chunk = [0u8; READ_CHUNK];
-            match conn.stream.read(&mut chunk) {
-                Ok(0) => close = true,
-                Ok(n) => conn.buffer.extend_from_slice(&chunk[..n]),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(_) => close = true,
-            }
-
-            while !close {
-                match resp::Request::parse(&conn.buffer) {
-                    Ok(resp::Request::Command { argv, consumed }) => {
-                        let reply = command::dispatch(&argv, &mut self.state);
-                        if conn.stream.write_all(&reply.encode()).is_err() {
-                            close = true;
-                        } else {
-                            conn.buffer.drain(..consumed);
-                        }
-                    }
-                    Ok(resp::Request::Empty { consumed }) => {
-                        conn.buffer.drain(..consumed);
-                    }
-                    Ok(resp::Request::Incomplete) => break,
-                    Err(e) => {
-                        let reply = resp::Value::Error(format!("ERR {e}"));
-                        let _ = conn.stream.write_all(&reply.encode());
-                        close = true;
-                    }
+        // A single fill may have delivered several pipelined commands, so parse
+        // each complete one in turn. A trailing partial command stays buffered
+        // for the next read.
+        while !close {
+            match resp::Request::parse(client.input()) {
+                Ok(resp::Request::Command { argv, consumed }) => {
+                    let reply = command::dispatch(&argv, &mut self.state);
+                    client.queue(&reply.encode());
+                    client.consume(consumed);
+                }
+                Ok(resp::Request::Empty { consumed }) => client.consume(consumed),
+                Ok(resp::Request::Incomplete) => break,
+                Err(e) => {
+                    client.queue(&resp::Value::Error(format!("ERR {e}")).encode());
+                    close = true;
                 }
             }
         }
 
         if close {
-            self.connections.remove(&fd);
+            // Best effort flush of any queued reply, e.g. a protocol error,
+            // before dropping the client.
+            client.flush();
+            self.close_client(fd, event_loop);
+            return Ok(());
         }
+        self.flush_to_client(fd, event_loop)
     }
 
-    /// The listener's read interest, for the loop to subscribe before running.
-    pub fn listen_interest(&self) -> Event {
-        Event {
-            fd: self.listener.as_raw_fd(),
-            op: Operation::Read,
+    /// Flushes a writable client's queued output and updates its write interest,
+    /// closing it on a write error.
+    fn flush_to_client(&mut self, fd: RawFd, event_loop: &mut EventLoop) -> std::io::Result<()> {
+        let Some(client) = self.clients.get_mut(&fd) else {
+            return Ok(());
+        };
+
+        let close = if !client.flush() {
+            true
+        } else {
+            Self::apply_write_interest(client, fd, event_loop)?;
+            false
+        };
+
+        if close {
+            self.close_client(fd, event_loop);
         }
+        Ok(())
+    }
+
+    /// Reregisters interest when a client starts or stops having queued output,
+    /// so writability is watched only while there is something to send and a
+    /// level triggered poll does not wake us in a busy loop.
+    fn apply_write_interest(
+        client: &mut Client,
+        fd: RawFd,
+        event_loop: &mut EventLoop,
+    ) -> std::io::Result<()> {
+        if let Some(want_write) = client.write_interest_change() {
+            let interest = if want_write {
+                Interest::READABLE_WRITABLE
+            } else {
+                Interest::READABLE
+            };
+            event_loop.reregister(fd, interest)?;
+        }
+        Ok(())
+    }
+
+    /// Stops watching `fd` and drops its client.
+    fn close_client(&mut self, fd: RawFd, event_loop: &mut EventLoop) {
+        // Dropping the client below also removes the descriptor from the poller,
+        // but deregistering first keeps its set tidy.
+        let _ = event_loop.deregister(fd);
+        self.clients.remove(&fd);
+    }
+
+    /// The listener's file descriptor.
+    pub fn listener_fd(&self) -> RawFd {
+        self.listener.as_raw_fd()
     }
 }
 
 impl EventHandler for Server {
     fn on_io(&mut self, event: Event, event_loop: &mut EventLoop) -> std::io::Result<()> {
         if event.fd == self.listener.as_raw_fd() {
-            self.accept(event_loop)
-        } else {
-            self.handle_client(event.fd);
-            Ok(())
+            return self.accept(event_loop);
+        }
+
+        match event.op {
+            Operation::Read => self.serve_client(event.fd, event_loop),
+            Operation::Write => self.flush_to_client(event.fd, event_loop),
         }
     }
 

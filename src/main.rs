@@ -3,6 +3,7 @@
 
 //! rkv, an in-memory key-value store.
 
+mod client;
 mod command;
 mod config;
 mod dict;
@@ -14,7 +15,7 @@ mod state;
 mod store;
 
 use config::Config;
-use event_loop::EventLoop;
+use event_loop::{EventLoop, Interest};
 use server::Server;
 
 fn main() -> std::io::Result<()> {
@@ -29,6 +30,6 @@ fn main() -> std::io::Result<()> {
     let mut event_loop = EventLoop::new(config.max_clients)?;
     let mut server = Server::bind(config)?;
 
-    event_loop.subscribe(server.listen_interest())?;
+    event_loop.register(server.listener_fd(), Interest::READABLE)?;
     event_loop.run(&mut server)
 }

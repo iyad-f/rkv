@@ -3,7 +3,7 @@
 
 use std::os::fd::RawFd;
 
-use super::{Event, IoMultiplexer, Operation};
+use super::{Event, Interest, IoMultiplexer, Operation};
 
 /// An [`IoMultiplexer`] for macOS, backed by the `kqueue` and `kevent` syscalls.
 pub struct Kqueue {
@@ -36,20 +36,20 @@ impl Kqueue {
             ],
         })
     }
-}
 
-impl IoMultiplexer for Kqueue {
-    fn subscribe(&self, event: Event) -> std::io::Result<()> {
+    /// Adds or deletes a single filter for `fd`. Deleting a filter that was
+    /// never added is treated as success.
+    fn change(&self, fd: RawFd, filter: i16, add: bool) -> std::io::Result<()> {
         let change = libc::kevent {
-            ident: event.fd as usize,
-            filter: event.op.to_filter(),
-            flags: libc::EV_ADD,
+            ident: fd as usize,
+            filter,
+            flags: if add { libc::EV_ADD } else { libc::EV_DELETE },
             fflags: 0,
             data: 0,
             udata: std::ptr::null_mut(),
         };
 
-        if unsafe {
+        let result = unsafe {
             libc::kevent(
                 self.fd,
                 &change,
@@ -58,12 +58,42 @@ impl IoMultiplexer for Kqueue {
                 0,
                 std::ptr::null(),
             )
-        } < 0
-        {
-            return Err(std::io::Error::last_os_error());
+        };
+        if result < 0 {
+            let err = std::io::Error::last_os_error();
+            if !add && err.raw_os_error() == Some(libc::ENOENT) {
+                return Ok(());
+            }
+            return Err(err);
         }
 
         Ok(())
+    }
+
+    /// Enables the filters `interest` asks for and deletes the rest.
+    fn apply(&self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.change(fd, libc::EVFILT_READ, interest.read)?;
+        self.change(fd, libc::EVFILT_WRITE, interest.write)
+    }
+}
+
+impl IoMultiplexer for Kqueue {
+    fn register(&self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.apply(fd, interest)
+    }
+
+    fn reregister(&self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.apply(fd, interest)
+    }
+
+    fn deregister(&self, fd: RawFd) -> std::io::Result<()> {
+        self.apply(
+            fd,
+            Interest {
+                read: false,
+                write: false,
+            },
+        )
     }
 
     fn poll(
@@ -122,14 +152,6 @@ impl Drop for Kqueue {
 }
 
 impl Operation {
-    /// Returns this operation's `kqueue` filter.
-    fn to_filter(self) -> i16 {
-        match self {
-            Self::Read => libc::EVFILT_READ,
-            Self::Write => libc::EVFILT_WRITE,
-        }
-    }
-
     /// Reads the operation out of a `kqueue` filter.
     fn from_filter(filter: i16) -> Self {
         if filter == libc::EVFILT_READ {

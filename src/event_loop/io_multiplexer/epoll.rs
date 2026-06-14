@@ -4,7 +4,7 @@
 use std::os::fd::RawFd;
 use std::time::Duration;
 
-use super::{Event, IoMultiplexer, Operation};
+use super::{Event, Interest, IoMultiplexer, Operation};
 
 /// An [`IoMultiplexer`] for Linux, backed by the `epoll` syscalls.
 pub struct Epoll {
@@ -27,16 +27,36 @@ impl Epoll {
             native: vec![libc::epoll_event { events: 0, u64: 0 }; max_events],
         })
     }
+
+    /// Issues an `epoll_ctl` call applying `interest`'s flags to `fd`.
+    fn ctl(&self, op: libc::c_int, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        let mut native = libc::epoll_event {
+            events: interest.to_flags(),
+            u64: fd as u64,
+        };
+
+        if unsafe { libc::epoll_ctl(self.fd, op, fd, &mut native) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
 }
 
 impl IoMultiplexer for Epoll {
-    fn subscribe(&self, event: Event) -> std::io::Result<()> {
-        let mut native = libc::epoll_event {
-            events: event.op.to_flags(),
-            u64: event.fd as u64,
-        };
+    fn register(&self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.ctl(libc::EPOLL_CTL_ADD, fd, interest)
+    }
 
-        if unsafe { libc::epoll_ctl(self.fd, libc::EPOLL_CTL_ADD, event.fd, &mut native) } < 0 {
+    fn reregister(&self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.ctl(libc::EPOLL_CTL_MOD, fd, interest)
+    }
+
+    fn deregister(&self, fd: RawFd) -> std::io::Result<()> {
+        // The event argument is ignored for EPOLL_CTL_DEL, but kernels before 2.6.9
+        // reject a null pointer, so pass a throwaway.
+        let mut native = libc::epoll_event { events: 0, u64: 0 };
+        if unsafe { libc::epoll_ctl(self.fd, libc::EPOLL_CTL_DEL, fd, &mut native) } < 0 {
             return Err(std::io::Error::last_os_error());
         }
 
@@ -66,10 +86,14 @@ impl IoMultiplexer for Epoll {
         events.clear();
         for i in 0..n as usize {
             let native = self.native[i];
-            events.push(Event {
-                fd: native.u64 as RawFd,
-                op: Operation::from_flags(native.events),
-            });
+            let fd = native.u64 as RawFd;
+            let flags = native.events;
+
+            for op in [Operation::Read, Operation::Write] {
+                if op.is_ready(flags) {
+                    events.push(Event { fd, op });
+                }
+            }
         }
 
         Ok(())
@@ -84,21 +108,30 @@ impl Drop for Epoll {
     }
 }
 
-impl Operation {
-    /// Returns this operation's `epoll` event flags.
+impl Interest {
+    /// Returns the `epoll` event flags for this interest.
     fn to_flags(self) -> u32 {
-        match self {
-            Self::Read => libc::EPOLLIN as u32,
-            Self::Write => libc::EPOLLOUT as u32,
+        let mut flags = 0;
+        if self.read {
+            flags |= libc::EPOLLIN as u32;
         }
+        if self.write {
+            flags |= libc::EPOLLOUT as u32;
+        }
+        flags
     }
+}
 
-    /// Reads the operation out of a set of `epoll` event flags.
-    fn from_flags(flags: u32) -> Self {
-        if flags & libc::EPOLLIN as u32 != 0 {
-            Self::Read
-        } else {
-            Self::Write
-        }
+impl Operation {
+    /// Returns whether epoll `flags` report this operation ready. A hangup or
+    /// error counts as readiness for both operations, so whichever handler is
+    /// registered runs, sees end-of-stream or the error, and closes.
+    fn is_ready(self, flags: u32) -> bool {
+        let hup_or_err = flags & (libc::EPOLLHUP | libc::EPOLLERR) as u32 != 0;
+        let bit = match self {
+            Self::Read => libc::EPOLLIN,
+            Self::Write => libc::EPOLLOUT,
+        };
+        flags & bit as u32 != 0 || hup_or_err
     }
 }

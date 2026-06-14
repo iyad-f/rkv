@@ -10,11 +10,12 @@
 
 mod io_multiplexer;
 
+use std::os::fd::RawFd;
 use std::time::{Duration, Instant};
 
 use io_multiplexer::{IoMultiplexer, Poller};
 
-pub use io_multiplexer::{Event, Operation};
+pub use io_multiplexer::{Event, Interest, Operation};
 
 /// The application an [`EventLoop`] drives, through I/O events and a periodic tick.
 pub trait EventHandler {
@@ -42,9 +43,19 @@ impl EventLoop {
         })
     }
 
-    /// Registers interest in `event` so future polls report it as ready.
-    pub fn subscribe(&mut self, event: Event) -> std::io::Result<()> {
-        self.poller.subscribe(event)
+    /// Registers `fd` for `interest` so future polls report it as ready.
+    pub fn register(&mut self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.poller.register(fd, interest)
+    }
+
+    /// Replaces the interest of an already registered `fd`.
+    pub fn reregister(&mut self, fd: RawFd, interest: Interest) -> std::io::Result<()> {
+        self.poller.reregister(fd, interest)
+    }
+
+    /// Stops watching `fd`.
+    pub fn deregister(&mut self, fd: RawFd) -> std::io::Result<()> {
+        self.poller.deregister(fd)
     }
 
     /// Dispatches ready I/O events, firing the handler's periodic tick on a

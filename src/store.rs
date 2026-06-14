@@ -39,6 +39,11 @@ impl Store {
         }
     }
 
+    /// Returns the number of keys stored, including any expired but not yet reaped.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     /// Returns the value at `key`, or `None` if it is missing or has expired.
     pub fn get(&mut self, key: &[u8]) -> Option<&Vec<u8>> {
         self.remove_if_expired(key, Self::now());

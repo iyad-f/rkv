@@ -9,6 +9,7 @@
 
 mod append;
 mod config;
+mod dbsize;
 mod decr;
 mod decrby;
 mod del;
@@ -68,6 +69,7 @@ const COMMANDS: &[Command] = &[
     expire::COMMAND,
     ttl::COMMAND,
     persist::COMMAND,
+    dbsize::COMMAND,
 ];
 
 /// Command name to command mapping.

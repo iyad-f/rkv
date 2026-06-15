@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, errors};
+use crate::object::Object;
 use crate::resp::Value;
 use crate::state::State;
 
@@ -15,7 +16,7 @@ pub const COMMAND: Command = Command {
 fn get(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
         [key] => match state.store.get(key) {
-            Some(value) => Value::Bulk(value.clone()),
+            Some(Object::String(bytes)) => Value::Bulk(bytes.clone()),
             None => Value::Null,
         },
         _ => errors::wrong_args("get"),

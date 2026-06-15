@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, errors};
+use crate::object::Object;
 use crate::resp::Value;
 use crate::state::State;
 
@@ -15,10 +16,13 @@ pub const COMMAND: Command = Command {
 fn append(args: &[Vec<u8>], state: &mut State) -> Value {
     match args {
         [key, value] => {
-            let mut stored = state.store.get(key).cloned().unwrap_or_default();
+            let mut stored = match state.store.get(key) {
+                Some(Object::String(bytes)) => bytes.clone(),
+                None => Vec::new(),
+            };
             stored.extend_from_slice(value);
             let len = stored.len() as i64;
-            state.store.update(key.clone(), stored);
+            state.store.update(key.clone(), Object::String(stored));
             Value::Integer(len)
         }
         _ => errors::wrong_args("append"),

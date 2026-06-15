@@ -8,6 +8,7 @@ mod command;
 mod config;
 mod dict;
 mod event_loop;
+mod object;
 mod prng;
 mod resp;
 mod server;

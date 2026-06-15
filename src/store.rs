@@ -6,6 +6,7 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::dict::Dict;
+use crate::object::Object;
 use crate::prng::Prng;
 
 /// The expiry state of a key.
@@ -22,8 +23,8 @@ pub enum Expiry {
 
 /// A key-value store that tracks an optional expiry deadline per key.
 pub struct Store {
-    /// The stored values.
-    data: Dict<Vec<u8>, Vec<u8>>,
+    /// The stored objects.
+    data: Dict<Vec<u8>, Object>,
 
     /// Absolute deadlines, in milliseconds since the Unix epoch, for the keys
     /// that have an expiry. A key without an expiry is absent.
@@ -45,7 +46,7 @@ impl Store {
     }
 
     /// Returns the value at `key`, or `None` if it is missing or has expired.
-    pub fn get(&mut self, key: &[u8]) -> Option<&Vec<u8>> {
+    pub fn get(&mut self, key: &[u8]) -> Option<&Object> {
         self.remove_if_expired(key);
         self.data.get(key)
     }
@@ -57,13 +58,13 @@ impl Store {
     }
 
     /// Stores `value` at `key`, discarding any existing expiry.
-    pub fn set(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    pub fn set(&mut self, key: Vec<u8>, value: Object) {
         self.deadlines.remove(&key);
         self.data.insert(key, value);
     }
 
     /// Stores `value` at `key`, preserving any existing expiry.
-    pub fn update(&mut self, key: Vec<u8>, value: Vec<u8>) {
+    pub fn update(&mut self, key: Vec<u8>, value: Object) {
         self.data.insert(key, value);
     }
 
@@ -189,7 +190,7 @@ mod tests {
     #[test]
     fn read_lazily_expires_a_past_deadline() {
         let mut store = Store::new();
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", 1);
 
         assert!(store.get(b"k").is_none());
@@ -199,19 +200,19 @@ mod tests {
     #[test]
     fn read_keeps_a_future_deadline() {
         let mut store = Store::new();
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
-        assert_eq!(store.get(b"k"), Some(&b"v".to_vec()));
+        assert_eq!(store.get(b"k"), Some(&Object::String(b"v".to_vec())));
     }
 
     #[test]
     fn set_clears_an_existing_expiry() {
         let mut store = Store::new();
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
-        store.set(b"k".to_vec(), b"v2".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v2".to_vec()));
 
         assert!(matches!(store.expiry(b"k"), Expiry::Never));
     }
@@ -219,10 +220,10 @@ mod tests {
     #[test]
     fn update_preserves_an_existing_expiry() {
         let mut store = Store::new();
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
-        store.update(b"k".to_vec(), b"v2".to_vec());
+        store.update(b"k".to_vec(), Object::String(b"v2".to_vec()));
 
         assert!(matches!(store.expiry(b"k"), Expiry::At(_)));
     }
@@ -230,7 +231,7 @@ mod tests {
     #[test]
     fn persist_reports_whether_an_expiry_was_removed() {
         let mut store = Store::new();
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         assert!(!store.persist(b"k"));
 
         store.set_expiry(b"k", Store::now() + 100_000);
@@ -243,7 +244,7 @@ mod tests {
         let mut store = Store::new();
         let mut prng = Prng::new(0);
 
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", 1);
         store.expire_cycle(&mut prng);
 
@@ -256,7 +257,7 @@ mod tests {
         let mut store = Store::new();
         let mut prng = Prng::new(0);
 
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
         store.expire_cycle(&mut prng);
 
@@ -269,7 +270,7 @@ mod tests {
         let mut store = Store::new();
         let mut prng = Prng::new(0);
 
-        store.set(b"k".to_vec(), b"v".to_vec());
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.expire_cycle(&mut prng);
 
         assert_eq!(store.data.len(), 1);
@@ -281,7 +282,7 @@ mod tests {
         let mut prng = Prng::new(0);
 
         for i in 0..100u8 {
-            store.set(vec![i], b"v".to_vec());
+            store.set(vec![i], Object::String(b"v".to_vec()));
             store.set_expiry(&[i], 1);
         }
         store.expire_cycle(&mut prng);

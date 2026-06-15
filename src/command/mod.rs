@@ -28,6 +28,7 @@ mod ttl;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use crate::object::Object;
 use crate::resp::Value;
 use crate::state::State;
 
@@ -108,7 +109,7 @@ fn parse_i64(bytes: &[u8]) -> Option<i64> {
 /// and replies with the new value.
 fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
     let current = match state.store.get(key) {
-        Some(value) => match parse_i64(value) {
+        Some(Object::String(bytes)) => match parse_i64(bytes) {
             Some(current) => current,
             None => return errors::not_integer(),
         },
@@ -121,7 +122,7 @@ fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
 
     state
         .store
-        .update(key.to_vec(), next.to_string().into_bytes());
+        .update(key.to_vec(), Object::String(next.to_string().into_bytes()));
     Value::Integer(next)
 }
 

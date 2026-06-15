@@ -46,13 +46,13 @@ impl Store {
 
     /// Returns the value at `key`, or `None` if it is missing or has expired.
     pub fn get(&mut self, key: &[u8]) -> Option<&Vec<u8>> {
-        self.remove_if_expired(key, Self::now());
+        self.remove_if_expired(key);
         self.data.get(key)
     }
 
     /// Reports whether `key` exists, treating an expired key as missing.
     pub fn contains_key(&mut self, key: &[u8]) -> bool {
-        self.remove_if_expired(key, Self::now());
+        self.remove_if_expired(key);
         self.data.contains_key(key)
     }
 
@@ -70,7 +70,7 @@ impl Store {
     /// Removes `key` and any expiry, returning whether it existed. An expired
     /// key counts as already gone.
     pub fn remove(&mut self, key: &[u8]) -> bool {
-        self.remove_if_expired(key, Self::now());
+        self.remove_if_expired(key);
         self.deadlines.remove(key);
         self.data.remove(key).is_some()
     }
@@ -134,7 +134,12 @@ impl Store {
 
             let mut expired = 0;
             for key in &sample {
-                if self.remove_if_expired(key, now) {
+                if self
+                    .deadlines
+                    .get(key)
+                    .is_some_and(|&deadline| now > deadline)
+                {
+                    self.remove_entry(key);
                     expired += 1;
                 }
             }
@@ -153,19 +158,21 @@ impl Store {
             .as_millis() as i64
     }
 
-    /// Removes `key` from both maps if `now` is past its deadline, returning
-    /// whether it was removed.
-    fn remove_if_expired(&mut self, key: &[u8], now: i64) -> bool {
+    /// Removes `key` from both maps if it has expired.
+    fn remove_if_expired(&mut self, key: &[u8]) {
         if self
             .deadlines
             .get(key)
-            .is_some_and(|&deadline| now > deadline)
+            .is_some_and(|&deadline| Self::now() > deadline)
         {
-            self.data.remove(key);
-            self.deadlines.remove(key);
-            return true;
+            self.remove_entry(key);
         }
-        false
+    }
+
+    /// Removes `key` from both the value and deadline maps.
+    fn remove_entry(&mut self, key: &[u8]) {
+        self.data.remove(key);
+        self.deadlines.remove(key);
     }
 }
 

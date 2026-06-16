@@ -3,6 +3,7 @@
 
 //! rkv, an in-memory key-value store.
 
+mod aof;
 mod client;
 mod command;
 mod config;

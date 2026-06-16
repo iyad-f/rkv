@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::object::Object;
 use crate::resp::Value;
 use crate::state::State;
@@ -10,11 +10,12 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "SET",
     arity: Arity::Exact(3),
+    write: true,
     handler: set,
 };
 
-fn set(args: &[Vec<u8>], state: &mut State) -> Value {
-    match args {
+fn set(ctx: &mut Context, state: &mut State) -> Value {
+    match ctx.args {
         [key, value] => {
             state.store.set(key.clone(), Object::String(value.clone()));
             Value::Simple("OK".to_string())

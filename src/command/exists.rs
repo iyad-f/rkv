@@ -3,19 +3,20 @@
 
 use crate::{resp::Value, state::State};
 
-use super::{Arity, Command};
+use super::{Arity, Command, Context};
 
 /// `EXISTS key [key ...]` replies with how many of the given keys exist.
 pub const COMMAND: Command = Command {
     name: "EXISTS",
     arity: Arity::Min(2),
+    write: false,
     handler: exists,
 };
 
-fn exists(args: &[Vec<u8>], state: &mut State) -> Value {
+fn exists(ctx: &mut Context, state: &mut State) -> Value {
     let mut count = 0;
 
-    for key in args {
+    for key in ctx.args {
         if state.store.contains_key(key) {
             count += 1;
         }

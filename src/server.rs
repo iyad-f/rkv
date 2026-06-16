@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::net::TcpListener;
 use std::os::fd::{AsRawFd, RawFd};
 
+use crate::aof::Aof;
 use crate::client::Client;
 use crate::command;
 use crate::config::Config;
@@ -35,11 +36,14 @@ impl Server {
         let listener = TcpListener::bind(config.addr())?;
         listener.set_nonblocking(true)?;
 
-        Ok(Self {
+        let mut server = Self {
             listener,
             state: State::new(config),
             clients: HashMap::new(),
-        })
+        };
+        server.load_aof()?;
+
+        Ok(server)
     }
 
     /// Accepts every pending connection, registering each with the event loop.
@@ -152,6 +156,44 @@ impl Server {
     pub fn listener_fd(&self) -> RawFd {
         self.listener.as_raw_fd()
     }
+
+    /// Replays the append-only file into the store, then opens it for appending.
+    ///
+    /// Does nothing when persistence is disabled. Replay runs before the append
+    /// handle is opened, so the commands it dispatches are not re-logged.
+    fn load_aof(&mut self) -> std::io::Result<()> {
+        if !self.state.config.aof.enabled {
+            return Ok(());
+        }
+
+        let path = self.state.config.aof_path();
+        if path.exists() {
+            let bytes = std::fs::read(&path)?;
+            self.replay(&bytes);
+        }
+
+        self.state.aof = Some(Aof::open(&path)?);
+        Ok(())
+    }
+
+    /// Dispatches every complete command in `bytes`, stopping at the first
+    /// incomplete or malformed one.
+    fn replay(&mut self, mut bytes: &[u8]) {
+        loop {
+            match resp::Request::parse(bytes) {
+                Ok(resp::Request::Command { argv, consumed }) => {
+                    command::dispatch(&argv, &mut self.state);
+                    bytes = &bytes[consumed..];
+                }
+                Ok(resp::Request::Empty { consumed }) => bytes = &bytes[consumed..],
+                Ok(resp::Request::Incomplete) => break,
+                Err(e) => {
+                    eprintln!("aof replay stopped on malformed command: {e}");
+                    break;
+                }
+            }
+        }
+    }
 }
 
 impl EventHandler for Server {
@@ -168,5 +210,11 @@ impl EventHandler for Server {
 
     fn on_tick(&mut self) {
         self.state.store.expire_cycle(&mut self.state.prng);
+
+        if let Some(aof) = &mut self.state.aof
+            && let Err(e) = aof.sync_if_due(self.state.config.aof.fsync)
+        {
+            eprintln!("aof sync failed: {e}");
+        }
     }
 }

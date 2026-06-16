@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -10,11 +10,12 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "INCRBY",
     arity: Arity::Exact(3),
+    write: true,
     handler: incrby,
 };
 
-fn incrby(args: &[Vec<u8>], state: &mut State) -> Value {
-    let [key, increment] = args else {
+fn incrby(ctx: &mut Context, state: &mut State) -> Value {
+    let [key, increment] = ctx.args else {
         return errors::wrong_args("incrby");
     };
 

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -10,11 +10,12 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "DECRBY",
     arity: Arity::Exact(3),
+    write: true,
     handler: decrby,
 };
 
-fn decrby(args: &[Vec<u8>], state: &mut State) -> Value {
-    let [key, decrement] = args else {
+fn decrby(ctx: &mut Context, state: &mut State) -> Value {
+    let [key, decrement] = ctx.args else {
         return errors::wrong_args("decrby");
     };
 

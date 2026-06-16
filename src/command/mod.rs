@@ -21,6 +21,7 @@ mod get;
 mod incr;
 mod incrby;
 mod persist;
+mod pexpireat;
 mod ping;
 mod set;
 mod ttl;
@@ -31,6 +32,7 @@ use std::sync::LazyLock;
 use crate::object::Object;
 use crate::resp::Value;
 use crate::state::State;
+use crate::store::Store;
 
 /// How many elements a command expects, counting the command name itself.
 pub enum Arity {
@@ -49,8 +51,22 @@ pub struct Command {
     /// How many elements the command expects.
     pub arity: Arity,
 
-    /// Runs the command, given the arguments after the name.
-    pub handler: fn(&[Vec<u8>], &mut State) -> Value,
+    /// Whether the command can modify the dataset.
+    pub write: bool,
+
+    /// Runs the command.
+    pub handler: fn(&mut Context, &mut State) -> Value,
+}
+
+/// The per-invocation context of a command.
+pub struct Context<'a> {
+    /// The arguments after the command name.
+    pub args: &'a [Vec<u8>],
+
+    /// A command to log in place of the running one, set by a handler that must
+    /// persist a different, deterministic form of itself (e.g. `EXPIRE` as
+    /// `PEXPIREAT`).
+    pub rewrite: Option<Vec<Vec<u8>>>,
 }
 
 /// Every command the server knows.
@@ -68,6 +84,7 @@ const COMMANDS: &[Command] = &[
     incrby::COMMAND,
     decrby::COMMAND,
     expire::COMMAND,
+    pexpireat::COMMAND,
     ttl::COMMAND,
     persist::COMMAND,
     dbsize::COMMAND,
@@ -97,7 +114,43 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
         return errors::wrong_args(command.name);
     }
 
-    (command.handler)(&argv[1..], state)
+    let mut ctx = Context {
+        args: &argv[1..],
+        rewrite: None,
+    };
+    let reply = (command.handler)(&mut ctx, state);
+
+    // A handler may rewrite what gets logged (e.g. EXPIRE -> PEXPIREAT) so a
+    // replay is deterministic.
+    if command.write
+        && !matches!(reply, Value::Error(_))
+        && let Some(aof) = &mut state.aof
+        && let Err(e) = aof.append(
+            ctx.rewrite.as_deref().unwrap_or(argv),
+            state.config.aof.fsync,
+        )
+    {
+        eprintln!("aof append failed: {e}");
+    }
+
+    reply
+}
+
+/// Applies the absolute expiry `when` (milliseconds since the Unix epoch) to
+/// `key`, deleting it if the deadline has already passed. Replies `1` if the key
+/// exists and `0` if it does not.
+fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
+    if !state.store.contains_key(key) {
+        return Value::Integer(0);
+    }
+
+    if when <= Store::now() {
+        state.store.remove(key);
+    } else {
+        state.store.set_expiry(key, when);
+    }
+
+    Value::Integer(1)
 }
 
 /// Parses bytes as a signed 64-bit integer, or `None` if they are not one.

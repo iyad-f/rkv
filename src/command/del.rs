@@ -3,19 +3,20 @@
 
 use crate::{resp::Value, state::State};
 
-use super::{Arity, Command};
+use super::{Arity, Command, Context};
 
 /// `DEL key [key ...]` removes the given keys, replying with the number removed.
 pub const COMMAND: Command = Command {
     name: "DEL",
     arity: Arity::Min(2),
+    write: true,
     handler: del,
 };
 
-fn del(args: &[Vec<u8>], state: &mut State) -> Value {
+fn del(ctx: &mut Context, state: &mut State) -> Value {
     let mut count = 0;
 
-    for key in args {
+    for key in ctx.args {
         if state.store.remove(key) {
             count += 1;
         }

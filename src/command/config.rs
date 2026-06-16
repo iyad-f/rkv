@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -9,17 +9,18 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "CONFIG",
     arity: Arity::Min(2),
+    write: false,
     handler: config,
 };
 
-fn config(args: &[Vec<u8>], state: &mut State) -> Value {
-    let Some(subcommand) = args.first() else {
+fn config(ctx: &mut Context, state: &mut State) -> Value {
+    let Some(subcommand) = ctx.args.first() else {
         return errors::wrong_args("config");
     };
 
     match subcommand.to_ascii_uppercase().as_slice() {
-        b"GET" => config_get(&args[1..], state),
-        b"SET" => config_set(&args[1..], state),
+        b"GET" => config_get(&ctx.args[1..], state),
+        b"SET" => config_set(&ctx.args[1..], state),
         b"HELP" => config_help(),
         _ => Value::Error(format!(
             "ERR unknown subcommand '{}'. Try CONFIG HELP.",

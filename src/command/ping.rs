@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -9,11 +9,12 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "PING",
     arity: Arity::Min(1),
+    write: false,
     handler: ping,
 };
 
-fn ping(args: &[Vec<u8>], _state: &mut State) -> Value {
-    match args {
+fn ping(ctx: &mut Context, _state: &mut State) -> Value {
+    match ctx.args {
         [] => Value::Simple("PONG".to_string()),
         [message] => Value::Bulk(message.clone()),
         _ => errors::wrong_args("ping"),

@@ -5,7 +5,7 @@
 
 use std::hash::{BuildHasher, Hasher, RandomState};
 
-use crate::{config::Config, prng::Prng, store::Store};
+use crate::{aof::Aof, config::Config, prng::Prng, store::Store};
 
 /// The shared state commands read and modify.
 pub struct State {
@@ -17,6 +17,9 @@ pub struct State {
 
     /// The shared random number generator, used for key sampling.
     pub prng: Prng,
+
+    /// The append-only file, None when persistence is disabled.
+    pub aof: Option<Aof>,
 }
 
 impl State {
@@ -27,6 +30,7 @@ impl State {
             store: Store::new(),
             config,
             prng: Prng::new(seed),
+            aof: None,
         }
     }
 }

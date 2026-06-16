@@ -17,6 +17,37 @@ pub struct Config {
 
     /// The maximum number of clients.
     pub max_clients: usize,
+
+    /// The working directory for persistence files.
+    pub dir: String,
+
+    /// The append-only file settings.
+    pub aof: AofConfig,
+}
+
+/// The append-only file settings.
+pub struct AofConfig {
+    /// Whether changes are logged to the append-only file.
+    pub enabled: bool,
+
+    /// The name of the append-only file within [`Config::dir`].
+    pub file_name: String,
+
+    /// How often the append-only file is flushed to disk.
+    pub fsync: FsyncPolicy,
+}
+
+/// When the append-only file is flushed to disk.
+#[derive(Clone, Copy)]
+pub enum FsyncPolicy {
+    /// Flush after every write.
+    Always,
+
+    /// Flush at most once per second.
+    EverySec,
+
+    /// Never flush explicitly, leaving it to the operating system.
+    No,
 }
 
 impl Default for Config {
@@ -25,6 +56,18 @@ impl Default for Config {
             host: "127.0.0.1".to_string(),
             port: 6380,
             max_clients: 1024,
+            dir: ".".to_string(),
+            aof: AofConfig::default(),
+        }
+    }
+}
+
+impl Default for AofConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            file_name: "rkv.aof".to_string(),
+            fsync: FsyncPolicy::EverySec,
         }
     }
 }
@@ -134,6 +177,33 @@ impl Config {
                     value: value.to_string(),
                 })?;
             }
+            "appendonly" => {
+                self.aof.enabled = match value {
+                    "yes" => true,
+                    "no" => false,
+                    _ => {
+                        return Err(Error::InvalidValue {
+                            key: key.to_string(),
+                            value: value.to_string(),
+                        });
+                    }
+                };
+            }
+            "dir" => self.dir = value.to_string(),
+            "appendfilename" => self.aof.file_name = value.to_string(),
+            "appendfsync" => {
+                self.aof.fsync = match value {
+                    "always" => FsyncPolicy::Always,
+                    "everysec" => FsyncPolicy::EverySec,
+                    "no" => FsyncPolicy::No,
+                    _ => {
+                        return Err(Error::InvalidValue {
+                            key: key.to_string(),
+                            value: value.to_string(),
+                        });
+                    }
+                };
+            }
             _ => return Err(Error::UnknownKey(key.to_string())),
         }
 
@@ -146,6 +216,17 @@ impl Config {
             "bind" => Some(self.host.clone()),
             "port" => Some(self.port.to_string()),
             "maxclients" => Some(self.max_clients.to_string()),
+            "appendonly" => Some(if self.aof.enabled { "yes" } else { "no" }.to_string()),
+            "dir" => Some(self.dir.clone()),
+            "appendfilename" => Some(self.aof.file_name.clone()),
+            "appendfsync" => Some(
+                match self.aof.fsync {
+                    FsyncPolicy::Always => "always",
+                    FsyncPolicy::EverySec => "everysec",
+                    FsyncPolicy::No => "no",
+                }
+                .to_string(),
+            ),
             _ => None,
         }
     }
@@ -153,5 +234,10 @@ impl Config {
     /// Returns the `host:port` address the listener binds to.
     pub fn addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+
+    /// Returns the full path to the append-only file.
+    pub fn aof_path(&self) -> std::path::PathBuf {
+        std::path::Path::new(&self.dir).join(&self.aof.file_name)
     }
 }

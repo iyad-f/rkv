@@ -3,16 +3,17 @@
 
 use crate::{resp::Value, state::State};
 
-use super::{Arity, Command};
+use super::{Arity, Command, Context};
 
 /// `DBSIZE` replies with the number of keys in the database.
 pub const COMMAND: Command = Command {
     name: "DBSIZE",
     arity: Arity::Exact(1),
+    write: false,
     handler: dbsize,
 };
 
-fn dbsize(_args: &[Vec<u8>], state: &mut State) -> Value {
+fn dbsize(_ctx: &mut Context, state: &mut State) -> Value {
     Value::Integer(state.store.len() as i64)
 }
 

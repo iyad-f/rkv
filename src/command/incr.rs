@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 
@@ -9,11 +9,12 @@ use crate::state::State;
 pub const COMMAND: Command = Command {
     name: "INCR",
     arity: Arity::Exact(2),
+    write: true,
     handler: incr,
 };
 
-fn incr(args: &[Vec<u8>], state: &mut State) -> Value {
-    let [key] = args else {
+fn incr(ctx: &mut Context, state: &mut State) -> Value {
+    let [key] = ctx.args else {
         return errors::wrong_args("incr");
     };
 

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 use crate::store::Store;
@@ -11,11 +11,12 @@ use crate::store::Store;
 pub const COMMAND: Command = Command {
     name: "EXPIRE",
     arity: Arity::Exact(3),
+    write: true,
     handler: expire,
 };
 
-fn expire(args: &[Vec<u8>], state: &mut State) -> Value {
-    let [key, seconds] = args else {
+fn expire(ctx: &mut Context, state: &mut State) -> Value {
+    let [key, seconds] = ctx.args else {
         return errors::wrong_args("expire");
     };
 
@@ -23,22 +24,26 @@ fn expire(args: &[Vec<u8>], state: &mut State) -> Value {
         return errors::not_integer();
     };
 
-    let now = Store::now();
-    let Some(when) = seconds.checked_mul(1000).and_then(|ms| ms.checked_add(now)) else {
+    let Some(when) = seconds
+        .checked_mul(1000)
+        .and_then(|ms| ms.checked_add(Store::now()))
+    else {
         return errors::invalid_expire_time("expire");
     };
 
-    if !state.store.contains_key(key) {
-        return Value::Integer(0);
+    let reply = super::set_expiry_at(state, key, when);
+
+    // Log the absolute deadline so a replay does not re-derive it from a later
+    // clock.
+    if matches!(reply, Value::Integer(1)) {
+        ctx.rewrite = Some(vec![
+            b"PEXPIREAT".to_vec(),
+            key.clone(),
+            when.to_string().into_bytes(),
+        ]);
     }
 
-    if when <= now {
-        state.store.remove(key);
-        return Value::Integer(1);
-    }
-
-    state.store.set_expiry(key, when);
-    Value::Integer(1)
+    reply
 }
 
 #[cfg(test)]

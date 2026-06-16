@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{Arity, Command, errors};
+use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
 use crate::state::State;
 use crate::store::{Expiry, Store};
@@ -11,11 +11,12 @@ use crate::store::{Expiry, Store};
 pub const COMMAND: Command = Command {
     name: "TTL",
     arity: Arity::Exact(2),
+    write: false,
     handler: ttl,
 };
 
-fn ttl(args: &[Vec<u8>], state: &mut State) -> Value {
-    let [key] = args else {
+fn ttl(ctx: &mut Context, state: &mut State) -> Value {
+    let [key] = ctx.args else {
         return errors::wrong_args("ttl");
     };
 

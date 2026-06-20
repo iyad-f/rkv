@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Iyad
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # rkv
 
 A key-value store written in Rust, wire-compatible with Redis, so it speaks the RESP protocol and works with existing Redis tooling like `redis-cli` and `redis-benchmark`.

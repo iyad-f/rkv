@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 use crate::store::{Expiry, Store};
 
 /// `TTL key` returns the remaining time to live of `key` in seconds, `-2` if

@@ -14,7 +14,6 @@ mod prng;
 mod resp;
 mod server;
 mod signal;
-mod state;
 mod store;
 
 use config::Config;

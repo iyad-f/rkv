@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `PERSIST key` removes the expiry from `key`, replying with `1` if a TTL was
 /// removed and `0` otherwise.

@@ -4,7 +4,7 @@
 use super::{Arity, Command, Context, errors};
 use crate::object::Object;
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `APPEND key value` appends to the value at `key`, replying with its new length.
 pub const COMMAND: Command = Command {

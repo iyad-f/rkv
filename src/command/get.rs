@@ -4,7 +4,7 @@
 use super::{Arity, Command, Context, errors};
 use crate::object::Object;
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `GET key` returns the value stored at `key`, or nil if it is missing.
 pub const COMMAND: Command = Command {

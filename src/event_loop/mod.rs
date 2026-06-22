@@ -26,6 +26,9 @@ pub trait EventHandler {
 
     /// Runs periodic background work, called on a roughly fixed interval.
     fn on_tick(&mut self) {}
+
+    /// Runs once after a shutdown is requested, before the loop returns.
+    fn on_shutdown(&mut self) {}
 }
 
 /// A single-threaded event loop driving an [`EventHandler`].
@@ -87,6 +90,7 @@ impl EventLoop {
             }
         }
 
+        handler.on_shutdown();
         Ok(())
     }
 }

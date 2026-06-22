@@ -4,7 +4,7 @@
 use super::{Arity, Command, Context, errors};
 use crate::object::Object;
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `SET key value` stores `value` at `key`.
 pub const COMMAND: Command = Command {

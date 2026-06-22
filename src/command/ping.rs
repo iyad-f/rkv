@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `PING [message]` replies with PONG, or echoes the optional message.
 pub const COMMAND: Command = Command {

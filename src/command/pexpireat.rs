@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `PEXPIREAT key ms-timestamp` sets `key` to expire at an absolute time in
 /// milliseconds since the Unix epoch, replying with `1` if the expiry was set

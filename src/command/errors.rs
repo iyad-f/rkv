@@ -44,3 +44,9 @@ pub(super) fn decrement_overflow() -> Value {
 pub(super) fn invalid_expire_time(command: &str) -> Value {
     Value::Error(format!("ERR invalid expire time in '{command}' command"))
 }
+
+/// Builds the reply for a write refused because the append-only file is in a
+/// failed-write state.
+pub(super) fn misconf() -> Value {
+    Value::Error("MISCONF Errors writing to the append-only file".to_string())
+}

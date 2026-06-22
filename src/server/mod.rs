@@ -6,6 +6,9 @@
 //! `Server` is the [`EventHandler`] the [`EventLoop`] drives. It parses
 //! requests, dispatches commands, and queues replies.
 
+mod child;
+mod state;
+
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::os::fd::{AsRawFd, RawFd};
@@ -16,7 +19,8 @@ use crate::command;
 use crate::config::Config;
 use crate::event_loop::{Event, EventHandler, EventLoop, Interest, Operation};
 use crate::resp;
-use crate::state::State;
+
+pub use state::State;
 
 /// The event-driven server, holding the listener, shared state, and clients.
 pub struct Server {
@@ -172,7 +176,7 @@ impl Server {
             self.replay(&bytes);
         }
 
-        self.state.aof = Some(Aof::open(&path)?);
+        self.state.aof = Aof::open(path)?;
         Ok(())
     }
 
@@ -211,10 +215,22 @@ impl EventHandler for Server {
     fn on_tick(&mut self) {
         self.state.store.expire_cycle(&mut self.state.prng);
 
-        if let Some(aof) = &mut self.state.aof
-            && let Err(e) = aof.sync_if_due(self.state.config.aof.fsync)
-        {
+        if let Err(e) = self.state.aof.sync_if_due(self.state.config.aof.fsync) {
             eprintln!("aof sync failed: {e}");
+        }
+
+        if let Err(e) = self.state.reap_child() {
+            eprintln!("aof rewrite failed: {e}");
+        }
+
+        if let Err(e) = self.state.maybe_auto_rewrite() {
+            eprintln!("aof auto-rewrite failed: {e}");
+        }
+    }
+
+    fn on_shutdown(&mut self) {
+        if let Err(e) = self.state.aof.sync() {
+            eprintln!("aof shutdown sync failed: {e}");
         }
     }
 }

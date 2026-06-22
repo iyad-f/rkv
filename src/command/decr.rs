@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `DECR key` decrements the integer at `key` by one, replying with the new value.
 pub const COMMAND: Command = Command {

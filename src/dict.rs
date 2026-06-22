@@ -188,6 +188,13 @@ impl<K: Hash + Eq, V> Dict<K, V> {
         self.get(key).is_some()
     }
 
+    /// Returns an iterator over every entry.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        let main = self.buckets.iter().flatten();
+        let rehash = self.rehash.iter().flat_map(|r| r.buckets.iter().flatten());
+        main.chain(rehash).map(|e| (&e.key, &e.value))
+    }
+
     /// Begins rehashing into twice as many buckets, migrating entries one
     /// bucket at a time as later operations run.
     fn start_rehash(&mut self) {
@@ -415,5 +422,23 @@ mod tests {
         for key in keys {
             assert!(dict.get(key).is_some());
         }
+    }
+
+    #[test]
+    fn iter_visits_every_entry_during_rehash() {
+        let mut dict = Dict::new(4);
+        let mut n = 0;
+
+        while dict.rehash.is_none() {
+            dict.insert(n, n);
+            n += 1;
+        }
+
+        assert!(dict.rehash.is_some());
+
+        let mut seen: Vec<i32> = dict.iter().map(|(k, _)| *k).collect();
+        seen.sort_unstable();
+
+        assert_eq!(seen, (0..n).collect::<Vec<_>>());
     }
 }

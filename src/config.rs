@@ -35,6 +35,13 @@ pub struct AofConfig {
 
     /// How often the append-only file is flushed to disk.
     pub fsync: FsyncPolicy,
+
+    /// The percentage the file may grow beyond its size after the last rewrite
+    /// before an automatic rewrite triggers. `None` disables automatic rewrites.
+    pub auto_rewrite_percentage: Option<u64>,
+
+    /// The minimum file size, in bytes, before an automatic rewrite triggers.
+    pub auto_rewrite_min_size: u64,
 }
 
 /// When the append-only file is flushed to disk.
@@ -68,6 +75,8 @@ impl Default for AofConfig {
             enabled: false,
             file_name: "rkv.aof".to_string(),
             fsync: FsyncPolicy::EverySec,
+            auto_rewrite_percentage: Some(100),
+            auto_rewrite_min_size: 64 * 1024 * 1024,
         }
     }
 }
@@ -204,6 +213,20 @@ impl Config {
                     }
                 };
             }
+            "auto-aof-rewrite-percentage" => {
+                let percentage: u64 = value.parse().map_err(|_| Error::InvalidValue {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                })?;
+                self.aof.auto_rewrite_percentage = (percentage != 0).then_some(percentage);
+            }
+            "auto-aof-rewrite-min-size" => {
+                self.aof.auto_rewrite_min_size =
+                    value.parse().map_err(|_| Error::InvalidValue {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                    })?;
+            }
             _ => return Err(Error::UnknownKey(key.to_string())),
         }
 
@@ -227,6 +250,10 @@ impl Config {
                 }
                 .to_string(),
             ),
+            "auto-aof-rewrite-percentage" => {
+                Some(self.aof.auto_rewrite_percentage.unwrap_or(0).to_string())
+            }
+            "auto-aof-rewrite-min-size" => Some(self.aof.auto_rewrite_min_size.to_string()),
             _ => None,
         }
     }

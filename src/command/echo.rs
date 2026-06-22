@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `ECHO message` replies with the message.
 pub const COMMAND: Command = Command {

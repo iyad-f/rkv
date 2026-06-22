@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `DECRBY key decrement` subtracts `decrement` from the integer at `key`,
 /// replying with the new value.

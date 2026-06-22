@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `CONFIG GET key` reads a setting, `CONFIG SET key value` updates one.
 pub const COMMAND: Command = Command {

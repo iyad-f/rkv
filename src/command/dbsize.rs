@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iyad
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{resp::Value, state::State};
+use crate::{resp::Value, server::State};
 
 use super::{Arity, Command, Context};
 

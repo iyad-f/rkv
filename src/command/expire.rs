@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 use crate::store::Store;
 
 /// `EXPIRE key seconds` sets `key` to expire after `seconds`, replying with `1`

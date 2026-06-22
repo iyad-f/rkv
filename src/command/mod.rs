@@ -8,6 +8,7 @@
 //! and calls the handler.
 
 mod append;
+mod bgrewriteaof;
 mod config;
 mod dbsize;
 mod decr;
@@ -31,7 +32,7 @@ use std::sync::LazyLock;
 
 use crate::object::Object;
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 use crate::store::Store;
 
 /// How many elements a command expects, counting the command name itself.
@@ -88,6 +89,7 @@ const COMMANDS: &[Command] = &[
     ttl::COMMAND,
     persist::COMMAND,
     dbsize::COMMAND,
+    bgrewriteaof::COMMAND,
 ];
 
 /// Command name to command mapping.
@@ -114,18 +116,25 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
         return errors::wrong_args(command.name);
     }
 
+    // Refuse writes while the append-only file is in a failed-write state, so
+    // changes that cannot be persisted are not accepted.
+    if command.write && !state.aof.write_ok() {
+        return errors::misconf();
+    }
+
     let mut ctx = Context {
         args: &argv[1..],
         rewrite: None,
     };
+    let dirty = state.store.dirty();
     let reply = (command.handler)(&mut ctx, state);
 
-    // A handler may rewrite what gets logged (e.g. EXPIRE -> PEXPIREAT) so a
-    // replay is deterministic.
+    // Log only when the handler actually changed the keyspace. A handler may
+    // rewrite what gets logged (e.g. EXPIRE -> PEXPIREAT) so a replay is
+    // deterministic. The append is a no-op while logging is disabled.
     if command.write
-        && !matches!(reply, Value::Error(_))
-        && let Some(aof) = &mut state.aof
-        && let Err(e) = aof.append(
+        && state.store.dirty() != dirty
+        && let Err(e) = state.aof.append(
             ctx.rewrite.as_deref().unwrap_or(argv),
             state.config.aof.fsync,
         )

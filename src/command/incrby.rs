@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::resp::Value;
-use crate::state::State;
+use crate::server::State;
 
 /// `INCRBY key increment` adds `increment` to the integer at `key`, replying with
 /// the new value.

@@ -29,6 +29,9 @@ pub struct Store {
     /// Absolute deadlines, in milliseconds since the Unix epoch, for the keys
     /// that have an expiry. A key without an expiry is absent.
     deadlines: Dict<Vec<u8>, i64>,
+
+    /// A counter bumped on every change to the keyspace.
+    dirty: u64,
 }
 
 impl Store {
@@ -37,7 +40,14 @@ impl Store {
         Self {
             data: Dict::new(16),
             deadlines: Dict::new(16),
+            dirty: 0,
         }
+    }
+
+    /// The number of changes made to the keyspace so far. A caller that sees it
+    /// unchanged across an operation knows nothing was modified.
+    pub fn dirty(&self) -> u64 {
+        self.dirty
     }
 
     /// Returns the number of keys stored, including any expired but not yet reaped.
@@ -61,11 +71,13 @@ impl Store {
     pub fn set(&mut self, key: Vec<u8>, value: Object) {
         self.deadlines.remove(&key);
         self.data.insert(key, value);
+        self.dirty += 1;
     }
 
     /// Stores `value` at `key`, preserving any existing expiry.
     pub fn update(&mut self, key: Vec<u8>, value: Object) {
         self.data.insert(key, value);
+        self.dirty += 1;
     }
 
     /// Removes `key` and any expiry, returning whether it existed. An expired
@@ -73,13 +85,18 @@ impl Store {
     pub fn remove(&mut self, key: &[u8]) -> bool {
         self.remove_if_expired(key);
         self.deadlines.remove(key);
-        self.data.remove(key).is_some()
+        let removed = self.data.remove(key).is_some();
+        if removed {
+            self.dirty += 1;
+        }
+        removed
     }
 
     /// Sets `key`'s expiry to the absolute `deadline`, in milliseconds since
     /// the Unix epoch.
     pub fn set_expiry(&mut self, key: &[u8], deadline: i64) {
         self.deadlines.insert(key.to_vec(), deadline);
+        self.dirty += 1;
     }
 
     /// Removes `key`'s expiry, returning whether one was removed.
@@ -87,7 +104,24 @@ impl Store {
         if !self.contains_key(key) {
             return false;
         }
-        self.deadlines.remove(key).is_some()
+        let removed = self.deadlines.remove(key).is_some();
+        if removed {
+            self.dirty += 1;
+        }
+        removed
+    }
+
+    /// Returns an iterator over each live key, its value, and its expiry deadline
+    /// if it has one.
+    pub fn iter(&self) -> impl Iterator<Item = (&[u8], &Object, Option<i64>)> {
+        let now = Self::now();
+        self.data.iter().filter_map(move |(key, value)| {
+            let deadline = self.deadlines.get(key.as_slice()).copied();
+            match deadline {
+                Some(deadline) if deadline <= now => None,
+                _ => Some((key.as_slice(), value, deadline)),
+            }
+        })
     }
 
     /// Returns the expiry state of `key`.
@@ -289,5 +323,55 @@ mod tests {
 
         assert_eq!(store.data.len(), 0);
         assert_eq!(store.deadlines.len(), 0);
+    }
+
+    #[test]
+    fn dirty_counts_effective_changes() {
+        let mut store = Store::new();
+        let start = store.dirty();
+
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
+        store.update(b"k".to_vec(), Object::String(b"v2".to_vec()));
+        store.set_expiry(b"k", Store::now() + 100_000);
+        assert!(store.persist(b"k"));
+        assert!(store.remove(b"k"));
+
+        assert_eq!(store.dirty(), start + 5);
+    }
+
+    #[test]
+    fn dirty_ignores_no_op_changes() {
+        let mut store = Store::new();
+        let start = store.dirty();
+
+        assert!(!store.remove(b"missing"));
+        assert!(!store.persist(b"missing"));
+
+        assert_eq!(store.dirty(), start);
+    }
+
+    #[test]
+    fn dirty_ignores_expiry_eviction() {
+        let mut store = Store::new();
+        let mut prng = Prng::new(0);
+        store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
+        store.set_expiry(b"k", 1);
+        let before = store.dirty();
+
+        store.expire_cycle(&mut prng);
+
+        assert_eq!(store.dirty(), before);
+        assert_eq!(store.data.len(), 0);
+    }
+
+    #[test]
+    fn iter_skips_expired_keys() {
+        let mut store = Store::new();
+        store.set(b"live".to_vec(), Object::String(b"b".to_vec()));
+        store.set(b"dead".to_vec(), Object::String(b"v".to_vec()));
+        store.set_expiry(b"dead", 1);
+
+        let keys: Vec<&[u8]> = store.iter().map(|(k, _, _)| k).collect();
+        assert_eq!(keys, [b"live".as_slice()]);
     }
 }

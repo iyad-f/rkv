@@ -44,6 +44,12 @@ impl Store {
         }
     }
 
+    /// Counts an in-place change to a value that the store's own mutating methods
+    /// did not make, keeping the modification count accurate.
+    pub fn incr_dirty(&mut self) {
+        self.dirty += 1;
+    }
+
     /// The number of changes made to the keyspace so far. A caller that sees it
     /// unchanged across an operation knows nothing was modified.
     pub fn dirty(&self) -> u64 {
@@ -59,6 +65,13 @@ impl Store {
     pub fn get(&mut self, key: &[u8]) -> Option<&Object> {
         self.remove_if_expired(key);
         self.data.get(key)
+    }
+
+    /// Returns a mutable reference to the value at `key`, or `None` if it is missing
+    /// or has expired.
+    pub fn get_mut(&mut self, key: &[u8]) -> Option<&mut Object> {
+        self.remove_if_expired(key);
+        self.data.get_mut(key)
     }
 
     /// Reports whether `key` exists, treating an expired key as missing.

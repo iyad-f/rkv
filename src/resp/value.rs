@@ -25,8 +25,11 @@ pub enum Value {
     /// An array of values.
     Array(Vec<Value>),
 
-    /// The null value.
-    Null,
+    /// A null bulk string.
+    NullBulk,
+
+    /// A null array.
+    NullArray,
 }
 
 impl Value {
@@ -69,8 +72,12 @@ impl Value {
                 }
                 out
             }
-            Self::Null => {
+            Self::NullBulk => {
                 out.extend_from_slice(b"$-1\r\n");
+                out
+            }
+            Self::NullArray => {
+                out.extend_from_slice(b"*-1\r\n");
                 out
             }
         }
@@ -115,7 +122,12 @@ mod tests {
 
     #[test]
     fn encode_null_bulk_string() {
-        assert_eq!(Value::Null.encode(), b"$-1\r\n".to_vec());
+        assert_eq!(Value::NullBulk.encode(), b"$-1\r\n".to_vec());
+    }
+
+    #[test]
+    fn encode_null_array() {
+        assert_eq!(Value::NullArray.encode(), b"*-1\r\n".to_vec());
     }
 
     #[test]

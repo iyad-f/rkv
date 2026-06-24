@@ -116,6 +116,34 @@ impl<K: Hash + Eq, V> Dict<K, V> {
         None
     }
 
+    /// Returns a mutable reference to the value at `key`, or `None` if it is absent.
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        // Try finding in the main buckets
+        let index = Self::bucket_index(&self.random_state, key, self.buckets.len());
+        if let Some(value) = self.buckets[index]
+            .iter_mut()
+            .find(|e| e.key.borrow() == key)
+            .map(|e| &mut e.value)
+        {
+            return Some(value);
+        }
+
+        // Try finding in the target buckets
+        if let Some(rehash) = &mut self.rehash {
+            let index = Self::bucket_index(&self.random_state, key, rehash.buckets.len());
+            return rehash.buckets[index]
+                .iter_mut()
+                .find(|e| e.key.borrow() == key)
+                .map(|e| &mut e.value);
+        }
+
+        None
+    }
+
     /// Removes `key` and returns its value, or `None` if it is absent.
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where

@@ -7,33 +7,18 @@
 //! [`dispatch`] looks the incoming command up in [`COMMANDS`], checks its arity,
 //! and calls the handler.
 
-mod append;
-mod bgrewriteaof;
-mod config;
-mod dbsize;
-mod decr;
-mod decrby;
-mod del;
-mod echo;
+mod connection;
 mod errors;
-mod exists;
-mod expire;
-mod get;
-mod incr;
-mod incrby;
-mod persist;
-mod pexpireat;
-mod ping;
-mod set;
-mod ttl;
+mod generic;
+mod list;
+mod server;
+mod string;
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::object::Object;
 use crate::resp::Value;
 use crate::server::State;
-use crate::store::Store;
 
 /// How many elements a command expects, counting the command name itself.
 pub enum Arity {
@@ -61,6 +46,9 @@ pub struct Command {
 
 /// The per-invocation context of a command.
 pub struct Context<'a> {
+    /// The command being invoked.
+    pub command: &'static Command,
+
     /// The arguments after the command name.
     pub args: &'a [Vec<u8>],
 
@@ -72,24 +60,40 @@ pub struct Context<'a> {
 
 /// Every command the server knows.
 const COMMANDS: &[Command] = &[
-    ping::COMMAND,
-    echo::COMMAND,
-    get::COMMAND,
-    set::COMMAND,
-    config::COMMAND,
-    del::COMMAND,
-    exists::COMMAND,
-    append::COMMAND,
-    incr::COMMAND,
-    decr::COMMAND,
-    incrby::COMMAND,
-    decrby::COMMAND,
-    expire::COMMAND,
-    pexpireat::COMMAND,
-    ttl::COMMAND,
-    persist::COMMAND,
-    dbsize::COMMAND,
-    bgrewriteaof::COMMAND,
+    connection::PING,
+    connection::ECHO,
+    string::GET,
+    string::SET,
+    server::CONFIG,
+    generic::DEL,
+    generic::EXISTS,
+    string::APPEND,
+    string::INCR,
+    string::DECR,
+    string::INCRBY,
+    string::DECRBY,
+    generic::EXPIRE,
+    generic::PEXPIREAT,
+    generic::TTL,
+    generic::PERSIST,
+    server::DBSIZE,
+    server::BGREWRITEAOF,
+    list::RPUSH,
+    list::LPUSH,
+    list::LLEN,
+    list::LRANGE,
+    list::LPOP,
+    list::RPOP,
+    list::LINDEX,
+    list::LSET,
+    list::RPUSHX,
+    list::LPUSHX,
+    list::LTRIM,
+    list::LINSERT,
+    list::LREM,
+    list::LMOVE,
+    list::LPOS,
+    list::LMPOP,
 ];
 
 /// Command name to command mapping.
@@ -123,6 +127,7 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
     }
 
     let mut ctx = Context {
+        command,
         args: &argv[1..],
         rewrite: None,
     };
@@ -145,47 +150,9 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
     reply
 }
 
-/// Applies the absolute expiry `when` (milliseconds since the Unix epoch) to
-/// `key`, deleting it if the deadline has already passed. Replies `1` if the key
-/// exists and `0` if it does not.
-fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
-    if !state.store.contains_key(key) {
-        return Value::Integer(0);
-    }
-
-    if when <= Store::now() {
-        state.store.remove(key);
-    } else {
-        state.store.set_expiry(key, when);
-    }
-
-    Value::Integer(1)
-}
-
 /// Parses bytes as a signed 64-bit integer, or `None` if they are not one.
 fn parse_i64(bytes: &[u8]) -> Option<i64> {
     std::str::from_utf8(bytes).ok().and_then(|s| s.parse().ok())
-}
-
-/// Adds `delta` to the integer stored at `key`, treating a missing key as 0,
-/// and replies with the new value.
-fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
-    let current = match state.store.get(key) {
-        Some(Object::String(bytes)) => match parse_i64(bytes) {
-            Some(current) => current,
-            None => return errors::not_integer(),
-        },
-        None => 0,
-    };
-
-    let Some(next) = current.checked_add(delta) else {
-        return errors::overflow();
-    };
-
-    state
-        .store
-        .update(key.to_vec(), Object::String(next.to_string().into_bytes()));
-    Value::Integer(next)
 }
 
 #[cfg(test)]

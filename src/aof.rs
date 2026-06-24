@@ -290,6 +290,11 @@ fn snapshot_commands(store: &Store) -> Vec<Vec<Vec<u8>>> {
             Object::String(bytes) => {
                 commands.push(vec![b"SET".to_vec(), key.to_vec(), bytes.clone()]);
             }
+            Object::List(items) => {
+                let mut argv = vec![b"RPUSH".to_vec(), key.to_vec()];
+                argv.extend(items.iter().cloned());
+                commands.push(argv);
+            }
         }
 
         if let Some(deadline) = deadline {

@@ -19,6 +19,7 @@ use crate::command;
 use crate::config::Config;
 use crate::event_loop::{Event, EventHandler, EventLoop, Interest, Operation};
 use crate::resp;
+use crate::session::Session;
 
 pub use state::State;
 
@@ -86,9 +87,12 @@ impl Server {
         while !close {
             match resp::Request::parse(client.input()) {
                 Ok(resp::Request::Command { argv, consumed }) => {
-                    let reply = command::dispatch(&argv, &mut self.state);
+                    let reply = command::dispatch(&argv, &mut self.state, &mut client.session);
                     client.queue(&reply.encode());
                     client.consume(consumed);
+                    if client.session.should_close() {
+                        close = true;
+                    }
                 }
                 Ok(resp::Request::Empty { consumed }) => client.consume(consumed),
                 Ok(resp::Request::Incomplete) => break,
@@ -183,10 +187,15 @@ impl Server {
     /// Dispatches every complete command in `bytes`, stopping at the first
     /// incomplete or malformed one.
     fn replay(&mut self, mut bytes: &[u8]) {
+        // Replay is a trusted internal operation, so its session is already
+        // authenticated and never blocked by a configured password.
+        let mut session = Session::default();
+        session.authenticate();
+
         loop {
             match resp::Request::parse(bytes) {
                 Ok(resp::Request::Command { argv, consumed }) => {
-                    command::dispatch(&argv, &mut self.state);
+                    command::dispatch(&argv, &mut self.state, &mut session);
                     bytes = &bytes[consumed..];
                 }
                 Ok(resp::Request::Empty { consumed }) => bytes = &bytes[consumed..],

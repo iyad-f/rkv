@@ -11,6 +11,7 @@ pub const GET: Command = Command {
     name: "GET",
     arity: Arity::Exact(2),
     write: false,
+    auth_required: true,
     handler: get,
 };
 
@@ -31,6 +32,7 @@ pub const SET: Command = Command {
     name: "SET",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: set,
 };
 
@@ -48,6 +50,7 @@ pub const APPEND: Command = Command {
     name: "APPEND",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: append,
 };
 
@@ -72,6 +75,7 @@ pub const INCR: Command = Command {
     name: "INCR",
     arity: Arity::Exact(2),
     write: true,
+    auth_required: true,
     handler: incr,
 };
 
@@ -89,6 +93,7 @@ pub const INCRBY: Command = Command {
     name: "INCRBY",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: incrby,
 };
 
@@ -109,6 +114,7 @@ pub const DECR: Command = Command {
     name: "DECR",
     arity: Arity::Exact(2),
     write: true,
+    auth_required: true,
     handler: decr,
 };
 
@@ -126,6 +132,7 @@ pub const DECRBY: Command = Command {
     name: "DECRBY",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: decrby,
 };
 
@@ -169,10 +176,7 @@ fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::command::{
-        dispatch,
-        test_utils::{cmd, state},
-    };
+    use crate::command::test_utils::{cmd, dispatch, state};
     use crate::resp::Value;
 
     // GET

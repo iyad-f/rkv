@@ -24,12 +24,12 @@ This document tracks which commands are implemented.
 
 | Command | Status |
 | ------- | ------ |
-| AUTH    | No     |
+| AUTH    | Yes    |
 | CLIENT  | No     |
 | ECHO    | Yes    |
 | HELLO   | No     |
 | PING    | Yes    |
-| QUIT    | No     |
+| QUIT    | Yes    |
 | RESET   | No     |
 | SELECT  | No     |
 
@@ -370,9 +370,9 @@ This document tracks which commands are implemented.
 
 **Total Commands**: 266
 
-- **Fully Implemented**: 32 commands
+- **Fully Implemented**: 34 commands
 - **Partially Implemented**: 2 commands
-- **Not Implemented**: 232 commands
+- **Not Implemented**: 230 commands
 
 **Implementation Coverage**: ~13%
 

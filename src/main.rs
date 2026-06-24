@@ -13,6 +13,7 @@ mod object;
 mod prng;
 mod resp;
 mod server;
+mod session;
 mod signal;
 mod store;
 

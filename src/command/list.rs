@@ -14,6 +14,7 @@ pub const RPUSH: Command = Command {
     name: "RPUSH",
     arity: Arity::Min(3),
     write: true,
+    auth_required: true,
     handler: rpush,
 };
 
@@ -27,6 +28,7 @@ pub const LPUSH: Command = Command {
     name: "LPUSH",
     arity: Arity::Min(3),
     write: true,
+    auth_required: true,
     handler: lpush,
 };
 
@@ -40,6 +42,7 @@ pub const RPUSHX: Command = Command {
     name: "RPUSHX",
     arity: Arity::Min(3),
     write: true,
+    auth_required: true,
     handler: rpushx,
 };
 
@@ -53,6 +56,7 @@ pub const LPUSHX: Command = Command {
     name: "LPUSHX",
     arity: Arity::Min(3),
     write: true,
+    auth_required: true,
     handler: lpushx,
 };
 
@@ -65,6 +69,7 @@ pub const LLEN: Command = Command {
     name: "LLEN",
     arity: Arity::Exact(2),
     write: false,
+    auth_required: true,
     handler: llen,
 };
 
@@ -86,6 +91,7 @@ pub const LRANGE: Command = Command {
     name: "LRANGE",
     arity: Arity::Exact(4),
     write: false,
+    auth_required: true,
     handler: lrange,
 };
 
@@ -129,6 +135,7 @@ pub const LPOP: Command = Command {
     name: "LPOP",
     arity: Arity::Min(2),
     write: true,
+    auth_required: true,
     handler: lpop,
 };
 
@@ -143,6 +150,7 @@ pub const RPOP: Command = Command {
     name: "RPOP",
     arity: Arity::Min(2),
     write: true,
+    auth_required: true,
     handler: rpop,
 };
 
@@ -157,6 +165,7 @@ pub const LINDEX: Command = Command {
     name: "LINDEX",
     arity: Arity::Exact(3),
     write: false,
+    auth_required: true,
     handler: lindex,
 };
 
@@ -185,6 +194,7 @@ pub const LSET: Command = Command {
     name: "LSET",
     arity: Arity::Exact(4),
     write: true,
+    auth_required: true,
     handler: lset,
 };
 
@@ -218,6 +228,7 @@ pub const LTRIM: Command = Command {
     name: "LTRIM",
     arity: Arity::Exact(4),
     write: true,
+    auth_required: true,
     handler: ltrim,
 };
 
@@ -258,6 +269,7 @@ pub const LINSERT: Command = Command {
     name: "LINSERT",
     arity: Arity::Exact(5),
     write: true,
+    auth_required: true,
     handler: linsert,
 };
 
@@ -295,6 +307,7 @@ pub const LREM: Command = Command {
     name: "LREM",
     arity: Arity::Exact(4),
     write: true,
+    auth_required: true,
     handler: lrem,
 };
 
@@ -356,6 +369,7 @@ pub const LMOVE: Command = Command {
     name: "LMOVE",
     arity: Arity::Exact(5),
     write: true,
+    auth_required: true,
     handler: lmove,
 };
 
@@ -379,6 +393,7 @@ pub const LPOS: Command = Command {
     name: "LPOS",
     arity: Arity::Min(3),
     write: false,
+    auth_required: true,
     handler: lpos,
 };
 
@@ -488,6 +503,7 @@ pub const LMPOP: Command = Command {
     name: "LMPOP",
     arity: Arity::Min(4),
     write: true,
+    auth_required: true,
     handler: lmpop,
 };
 
@@ -757,10 +773,7 @@ fn pop(ctx: &mut Context, state: &mut State, end: End) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::command::{
-        dispatch,
-        test_utils::{cmd, state},
-    };
+    use crate::command::test_utils::{cmd, dispatch, state};
     use crate::resp::Value;
 
     /// A bulk-string reply value, for terse assertions.

@@ -19,6 +19,7 @@ use std::sync::LazyLock;
 
 use crate::resp::Value;
 use crate::server::State;
+use crate::session::Session;
 
 /// How many elements a command expects, counting the command name itself.
 pub enum Arity {
@@ -40,17 +41,23 @@ pub struct Command {
     /// Whether the command can modify the dataset.
     pub write: bool,
 
+    /// Whether the command requires the connection to have authenticated.
+    pub auth_required: bool,
+
     /// Runs the command.
     pub handler: fn(&mut Context, &mut State) -> Value,
 }
 
 /// The per-invocation context of a command.
-pub struct Context<'a> {
+pub struct Context<'a, 's> {
     /// The command being invoked.
     pub command: &'static Command,
 
     /// The arguments after the command name.
     pub args: &'a [Vec<u8>],
+
+    /// The session of the connection that issued the command.
+    pub session: &'s mut Session,
 
     /// A command to log in place of the running one, set by a handler that must
     /// persist a different, deterministic form of itself (e.g. `EXPIRE` as
@@ -60,8 +67,10 @@ pub struct Context<'a> {
 
 /// Every command the server knows.
 const COMMANDS: &[Command] = &[
-    connection::PING,
+    connection::AUTH,
     connection::ECHO,
+    connection::PING,
+    connection::QUIT,
     string::GET,
     string::SET,
     server::CONFIG,
@@ -103,7 +112,7 @@ static COMMAND_TABLE: LazyLock<HashMap<&'static [u8], &'static Command>> =
 /// Routes a parsed request to its command and returns the reply.
 ///
 /// `argv` is the command name followed by its arguments, and is never empty.
-pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
+pub fn dispatch(argv: &[Vec<u8>], state: &mut State, session: &mut Session) -> Value {
     let name = &argv[0];
 
     let upper = name.to_ascii_uppercase();
@@ -120,6 +129,13 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
         return errors::wrong_args(command.name);
     }
 
+    // Reject commands until the connection authenticates, once a password is
+    // configured. A few commands (e.g. AUTH, QUIT) are allowed through so a
+    // client can authenticate or disconnect.
+    if command.auth_required && state.config.password.is_some() && !session.is_authenticated() {
+        return errors::noauth();
+    }
+
     // Refuse writes while the append-only file is in a failed-write state, so
     // changes that cannot be persisted are not accepted.
     if command.write && !state.aof.write_ok() {
@@ -129,6 +145,7 @@ pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
     let mut ctx = Context {
         command,
         args: &argv[1..],
+        session,
         rewrite: None,
     };
     let dirty = state.store.dirty();
@@ -169,12 +186,18 @@ mod test_utils {
     pub fn state() -> State {
         State::new(Config::default())
     }
+
+    /// Dispatches a command with a throwaway session, for tests that do not
+    /// exercise per-connection state.
+    pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
+        super::dispatch(argv, state, &mut Session::default())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_utils::{cmd, state};
+    use test_utils::{cmd, dispatch, state};
 
     #[test]
     fn command_name_is_case_insensitive() {

@@ -10,6 +10,7 @@ pub const CONFIG: Command = Command {
     name: "CONFIG",
     arity: Arity::Min(2),
     write: false,
+    auth_required: true,
     handler: config,
 };
 
@@ -85,6 +86,7 @@ pub const DBSIZE: Command = Command {
     name: "DBSIZE",
     arity: Arity::Exact(1),
     write: false,
+    auth_required: true,
     handler: dbsize,
 };
 
@@ -98,6 +100,7 @@ pub const BGREWRITEAOF: Command = Command {
     name: "BGREWRITEAOF",
     arity: Arity::Exact(1),
     write: false,
+    auth_required: true,
     handler: bgrewriteaof,
 };
 
@@ -116,10 +119,7 @@ fn bgrewriteaof(_ctx: &mut Context, state: &mut State) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::command::{
-        dispatch,
-        test_utils::{cmd, state},
-    };
+    use crate::command::test_utils::{cmd, dispatch, state};
     use crate::resp::Value;
 
     // CONFIG

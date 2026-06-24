@@ -78,3 +78,23 @@ pub(super) fn index_out_of_range() -> Value {
 pub(super) fn syntax_error() -> Value {
     Value::Error("ERR syntax error".to_string())
 }
+
+/// Builds the reply for a command issued on a connection that has not yet
+/// authenticated.
+pub(super) fn noauth() -> Value {
+    Value::Error("NOAUTH Authentication required.".to_string())
+}
+
+/// Builds the reply for an authentication attempt with an invalid password.
+pub(super) fn wrong_pass() -> Value {
+    Value::Error("WRONGPASS invalid username-password pair or user is disabled.".to_string())
+}
+
+/// Builds the reply for `AUTH password` when no password is configured.
+pub(super) fn password_not_set() -> Value {
+    Value::Error(
+        "ERR AUTH <password> called without any password configured for the default user. \
+         Are you sure your configuration is correct?"
+            .to_string(),
+    )
+}

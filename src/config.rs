@@ -21,6 +21,10 @@ pub struct Config {
     /// The working directory for persistence files.
     pub dir: String,
 
+    /// The password clients must authenticate with, or `None` when no password
+    /// is required.
+    pub password: Option<String>,
+
     /// The append-only file settings.
     pub aof: AofConfig,
 }
@@ -64,6 +68,7 @@ impl Default for Config {
             port: 6380,
             max_clients: 1024,
             dir: ".".to_string(),
+            password: None,
             aof: AofConfig::default(),
         }
     }
@@ -199,6 +204,7 @@ impl Config {
                 };
             }
             "dir" => self.dir = value.to_string(),
+            "requirepass" => self.password = (!value.is_empty()).then(|| value.to_string()),
             "appendfilename" => self.aof.file_name = value.to_string(),
             "appendfsync" => {
                 self.aof.fsync = match value {
@@ -241,6 +247,7 @@ impl Config {
             "maxclients" => Some(self.max_clients.to_string()),
             "appendonly" => Some(if self.aof.enabled { "yes" } else { "no" }.to_string()),
             "dir" => Some(self.dir.clone()),
+            "requirepass" => Some(self.password.clone().unwrap_or_default()),
             "appendfilename" => Some(self.aof.file_name.clone()),
             "appendfsync" => Some(
                 match self.aof.fsync {

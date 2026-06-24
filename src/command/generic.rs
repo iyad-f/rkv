@@ -11,6 +11,7 @@ pub const DEL: Command = Command {
     name: "DEL",
     arity: Arity::Min(2),
     write: true,
+    auth_required: true,
     handler: del,
 };
 
@@ -31,6 +32,7 @@ pub const EXISTS: Command = Command {
     name: "EXISTS",
     arity: Arity::Min(2),
     write: false,
+    auth_required: true,
     handler: exists,
 };
 
@@ -52,6 +54,7 @@ pub const EXPIRE: Command = Command {
     name: "EXPIRE",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: expire,
 };
 
@@ -93,6 +96,7 @@ pub const PEXPIREAT: Command = Command {
     name: "PEXPIREAT",
     arity: Arity::Exact(3),
     write: true,
+    auth_required: true,
     handler: pexpireat,
 };
 
@@ -114,6 +118,7 @@ pub const TTL: Command = Command {
     name: "TTL",
     arity: Arity::Exact(2),
     write: false,
+    auth_required: true,
     handler: ttl,
 };
 
@@ -138,6 +143,7 @@ pub const PERSIST: Command = Command {
     name: "PERSIST",
     arity: Arity::Exact(2),
     write: true,
+    auth_required: true,
     handler: persist,
 };
 
@@ -168,10 +174,7 @@ fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::command::{
-        dispatch,
-        test_utils::{cmd, state},
-    };
+    use crate::command::test_utils::{cmd, dispatch, state};
     use crate::resp::Value;
     use crate::store::Store;
 

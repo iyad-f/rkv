@@ -7,6 +7,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::os::fd::{AsRawFd, RawFd};
 
+use crate::session::Session;
+
 /// How many bytes to read from a socket per `read` call.
 const READ_CHUNK: usize = 16 * 1024;
 
@@ -24,6 +26,9 @@ pub struct Client {
 
     /// Whether this client is currently registered for write readiness.
     write_registered: bool,
+
+    /// Per-connection session.
+    pub session: Session,
 }
 
 impl Client {
@@ -37,6 +42,7 @@ impl Client {
             in_buf: Vec::new(),
             out_buf: Vec::new(),
             write_registered: false,
+            session: Session::default(),
         })
     }
 

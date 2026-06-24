@@ -92,6 +92,20 @@ fn quit(ctx: &mut Context, _state: &mut State) -> Value {
     Value::Simple("OK".to_string())
 }
 
+/// `RESET` resets the session to its initial state.
+pub const RESET: Command = Command {
+    name: "RESET",
+    arity: Arity::Exact(1),
+    write: false,
+    auth_required: false,
+    handler: reset,
+};
+
+fn reset(ctx: &mut Context, _state: &mut State) -> Value {
+    ctx.session.reset();
+    Value::Simple("RESET".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
@@ -261,5 +275,36 @@ mod tests {
 
         assert_eq!(reply, Value::Simple("OK".to_string()));
         assert!(session.should_close());
+    }
+
+    // RESET
+
+    #[test]
+    fn reset_replies_reset() {
+        assert_eq!(
+            dispatch(&cmd(&["RESET"]), &mut state()),
+            Value::Simple("RESET".to_string())
+        );
+    }
+
+    #[test]
+    fn reset_deauthenticates() {
+        let mut state = protected_state();
+        let mut session = Session::default();
+        crate::command::dispatch(&cmd(&["AUTH", "secret"]), &mut state, &mut session);
+        assert!(session.is_authenticated());
+
+        let reply = crate::command::dispatch(&cmd(&["RESET"]), &mut state, &mut session);
+
+        assert_eq!(reply, Value::Simple("RESET".to_string()));
+        assert!(!session.is_authenticated());
+    }
+
+    #[test]
+    fn reset_wrong_args() {
+        assert_eq!(
+            dispatch(&cmd(&["RESET", "x"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'reset' command".to_string())
+        );
     }
 }

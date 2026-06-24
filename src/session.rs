@@ -23,6 +23,11 @@ impl Session {
         self.authenticated
     }
 
+    /// Resets the session's state to its defaults.
+    pub fn reset(&mut self) {
+        self.authenticated = false;
+    }
+
     /// Requests that the connection close once the current reply is flushed.
     pub fn request_close(&mut self) {
         self.close_after_reply = true;

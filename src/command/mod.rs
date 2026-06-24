@@ -71,6 +71,7 @@ const COMMANDS: &[Command] = &[
     connection::ECHO,
     connection::PING,
     connection::QUIT,
+    connection::RESET,
     string::GET,
     string::SET,
     server::CONFIG,

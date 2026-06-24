@@ -30,7 +30,7 @@ This document tracks which commands are implemented.
 | HELLO   | No     |
 | PING    | Yes    |
 | QUIT    | Yes    |
-| RESET   | No     |
+| RESET   | Yes    |
 | SELECT  | No     |
 
 ## String
@@ -370,9 +370,9 @@ This document tracks which commands are implemented.
 
 **Total Commands**: 266
 
-- **Fully Implemented**: 34 commands
+- **Fully Implemented**: 35 commands
 - **Partially Implemented**: 2 commands
-- **Not Implemented**: 230 commands
+- **Not Implemented**: 229 commands
 
 **Implementation Coverage**: ~13%
 

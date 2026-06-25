@@ -163,7 +163,7 @@ fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
         return Value::Integer(0);
     }
 
-    if when <= Store::now() {
+    if Store::is_expired(when) {
         state.store.remove(key);
     } else {
         state.store.set_expiry(key, when);

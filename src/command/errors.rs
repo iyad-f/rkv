@@ -30,6 +30,16 @@ pub(super) fn not_integer() -> Value {
     Value::Error("ERR value is not an integer or out of range".to_string())
 }
 
+/// Builds the standard reply for a value that is not a valid float.
+pub(super) fn not_float() -> Value {
+    Value::Error("ERR value is not a valid float".to_string())
+}
+
+/// Builds the reply for a float operation whose result is not finite.
+pub(super) fn nan_or_infinity() -> Value {
+    Value::Error("ERR increment would produce NaN or Infinity".to_string())
+}
+
 /// Builds the standard reply for an integer operation that would overflow.
 pub(super) fn overflow() -> Value {
     Value::Error("ERR increment or decrement would overflow".to_string())
@@ -72,6 +82,16 @@ pub(super) fn no_such_key() -> Value {
 /// Builds the reply for an index argument that falls outside the value.
 pub(super) fn index_out_of_range() -> Value {
     Value::Error("ERR index out of range".to_string())
+}
+
+/// Builds the reply for a negative string offset.
+pub(super) fn offset_out_of_range() -> Value {
+    Value::Error("ERR offset is out of range".to_string())
+}
+
+/// Builds the reply for a write that would grow a string past the allowed size.
+pub(super) fn string_too_long() -> Value {
+    Value::Error("ERR string exceeds maximum allowed size (proto-max-bulk-len)".to_string())
 }
 
 /// Builds the reply for a command given malformed or unrecognized arguments.

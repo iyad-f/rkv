@@ -127,11 +127,10 @@ impl Store {
     /// Returns an iterator over each live key, its value, and its expiry deadline
     /// if it has one.
     pub fn iter(&self) -> impl Iterator<Item = (&[u8], &Object, Option<i64>)> {
-        let now = Self::now();
         self.data.iter().filter_map(move |(key, value)| {
             let deadline = self.deadlines.get(key.as_slice()).copied();
             match deadline {
-                Some(deadline) if deadline <= now => None,
+                Some(deadline) if Self::is_expired(deadline) => None,
                 _ => Some((key.as_slice(), value, deadline)),
             }
         })
@@ -206,12 +205,17 @@ impl Store {
             .as_millis() as i64
     }
 
+    /// Whether `deadline`, in milliseconds since the Unix epoch, has passed.
+    pub fn is_expired(deadline: i64) -> bool {
+        Self::now() > deadline
+    }
+
     /// Removes `key` from both maps if it has expired.
     fn remove_if_expired(&mut self, key: &[u8]) {
         if self
             .deadlines
             .get(key)
-            .is_some_and(|&deadline| Self::now() > deadline)
+            .is_some_and(|&deadline| Self::is_expired(deadline))
         {
             self.remove_entry(key);
         }

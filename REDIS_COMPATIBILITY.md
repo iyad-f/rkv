@@ -40,29 +40,25 @@ This document tracks which commands are implemented.
 | APPEND      | Yes     |
 | DECR        | Yes     |
 | DECRBY      | Yes     |
-| DELEX       | No      |
-| DIGEST      | No      |
 | GET         | Yes     |
-| GETDEL      | No      |
-| GETEX       | No      |
-| GETRANGE    | No      |
-| GETSET      | No      |
+| GETDEL      | Yes     |
+| GETEX       | Yes     |
+| GETRANGE    | Yes     |
+| GETSET      | Yes     |
 | INCR        | Yes     |
 | INCRBY      | Yes     |
-| INCRBYFLOAT | No      |
-| INCREX      | No      |
+| INCRBYFLOAT | Yes     |
 | LCS         | No      |
-| MGET        | No      |
-| MSET        | No      |
-| MSETEX      | No      |
-| MSETNX      | No      |
-| PSETEX      | No      |
-| SET         | Partial |
-| SETEX       | No      |
-| SETNX       | No      |
-| SETRANGE    | No      |
-| STRLEN      | No      |
-| SUBSTR      | No      |
+| MGET        | Yes     |
+| MSET        | Yes     |
+| MSETNX      | Yes     |
+| PSETEX      | Yes     |
+| SET         | Yes     |
+| SETEX       | Yes     |
+| SETNX       | Yes     |
+| SETRANGE    | Yes     |
+| STRLEN      | Yes     |
+| SUBSTR      | Yes     |
 
 ## Generic
 
@@ -368,12 +364,12 @@ This document tracks which commands are implemented.
 
 ## Summary
 
-**Total Commands**: 266
+**Total Commands**: 262
 
-- **Fully Implemented**: 35 commands
-- **Partially Implemented**: 2 commands
-- **Not Implemented**: 229 commands
+- **Fully Implemented**: 50 commands
+- **Partially Implemented**: 1 command
+- **Not Implemented**: 211 commands
 
-**Implementation Coverage**: ~13%
+**Implementation Coverage**: ~19%
 
 This compatibility matrix is updated as new commands are implemented in rkv.

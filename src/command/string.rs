@@ -372,7 +372,7 @@ pub const MSET: Command = Command {
 };
 
 fn mset(ctx: &mut Context, state: &mut State) -> Value {
-    if ctx.args.len() % 2 != 0 {
+    if !ctx.args.len().is_multiple_of(2) {
         return errors::wrong_args(ctx.command.name);
     }
 
@@ -396,7 +396,7 @@ pub const MSETNX: Command = Command {
 };
 
 fn msetnx(ctx: &mut Context, state: &mut State) -> Value {
-    if ctx.args.len() % 2 != 0 {
+    if !ctx.args.len().is_multiple_of(2) {
         return errors::wrong_args(ctx.command.name);
     }
 

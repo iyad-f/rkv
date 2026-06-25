@@ -2,6 +2,7 @@
 name = "rkv"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.96"
 
 [dependencies]
 libc = "0.2.186"

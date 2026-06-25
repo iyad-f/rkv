@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iyad
+# SPDX-License-Identifier: Apache-2.0
+
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]

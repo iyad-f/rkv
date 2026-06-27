@@ -48,7 +48,7 @@ This document tracks which commands are implemented.
 | INCR        | Yes     |
 | INCRBY      | Yes     |
 | INCRBYFLOAT | Yes     |
-| LCS         | No      |
+| LCS         | Yes     |
 | MGET        | Yes     |
 | MSET        | Yes     |
 | MSETNX      | Yes     |
@@ -366,9 +366,9 @@ This document tracks which commands are implemented.
 
 **Total Commands**: 262
 
-- **Fully Implemented**: 50 commands
+- **Fully Implemented**: 51 commands
 - **Partially Implemented**: 1 command
-- **Not Implemented**: 211 commands
+- **Not Implemented**: 210 commands
 
 **Implementation Coverage**: ~19%
 

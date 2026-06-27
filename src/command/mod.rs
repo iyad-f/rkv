@@ -85,6 +85,7 @@ const COMMANDS: &[Command] = &[
     string::INCR,
     string::INCRBY,
     string::INCRBYFLOAT,
+    string::LCS,
     string::MGET,
     string::MSET,
     string::MSETNX,

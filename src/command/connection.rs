@@ -31,7 +31,11 @@ fn auth(ctx: &mut Context, state: &mut State) -> Value {
     match &state.config.password {
         // With no password set the default user accepts any password, but the
         // lone-password form still reports the misconfiguration.
-        None if username.is_none() => errors::password_not_set(),
+        None if username.is_none() => Value::Error(
+            "ERR AUTH <password> called without any password configured for the default user. \
+             Are you sure your configuration is correct?"
+                .to_string(),
+        ),
         None if is_default => {
             ctx.session.authenticate();
             Value::Simple("OK".to_string())
@@ -40,7 +44,9 @@ fn auth(ctx: &mut Context, state: &mut State) -> Value {
             ctx.session.authenticate();
             Value::Simple("OK".to_string())
         }
-        _ => errors::wrong_pass(),
+        _ => Value::Error(
+            "WRONGPASS invalid username-password pair or user is disabled.".to_string(),
+        ),
     }
 }
 

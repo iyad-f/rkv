@@ -45,11 +45,6 @@ pub(super) fn overflow() -> Value {
     Value::Error("ERR increment or decrement would overflow".to_string())
 }
 
-/// Builds the reply for a `DECRBY` decrement that cannot be negated (`i64::MIN`).
-pub(super) fn decrement_overflow() -> Value {
-    Value::Error("ERR decrement would overflow".to_string())
-}
-
 /// Builds the reply for an expire command given a time that overflows.
 pub(super) fn invalid_expire_time(command: &str) -> Value {
     Value::Error(format!(
@@ -84,16 +79,6 @@ pub(super) fn index_out_of_range() -> Value {
     Value::Error("ERR index out of range".to_string())
 }
 
-/// Builds the reply for a negative string offset.
-pub(super) fn offset_out_of_range() -> Value {
-    Value::Error("ERR offset is out of range".to_string())
-}
-
-/// Builds the reply for a write that would grow a string past the allowed size.
-pub(super) fn string_too_long() -> Value {
-    Value::Error("ERR string exceeds maximum allowed size (proto-max-bulk-len)".to_string())
-}
-
 /// Builds the reply for a command given malformed or unrecognized arguments.
 pub(super) fn syntax_error() -> Value {
     Value::Error("ERR syntax error".to_string())
@@ -103,18 +88,4 @@ pub(super) fn syntax_error() -> Value {
 /// authenticated.
 pub(super) fn noauth() -> Value {
     Value::Error("NOAUTH Authentication required.".to_string())
-}
-
-/// Builds the reply for an authentication attempt with an invalid password.
-pub(super) fn wrong_pass() -> Value {
-    Value::Error("WRONGPASS invalid username-password pair or user is disabled.".to_string())
-}
-
-/// Builds the reply for `AUTH password` when no password is configured.
-pub(super) fn password_not_set() -> Value {
-    Value::Error(
-        "ERR AUTH <password> called without any password configured for the default user. \
-         Are you sure your configuration is correct?"
-            .to_string(),
-    )
 }

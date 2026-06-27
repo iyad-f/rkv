@@ -73,7 +73,7 @@ fn decrby(ctx: &mut Context, state: &mut State) -> Value {
     };
 
     let Some(delta) = decrement.checked_neg() else {
-        return errors::decrement_overflow();
+        return Value::Error("ERR decrement would overflow".to_string());
     };
 
     apply_delta(state, key, delta)
@@ -336,6 +336,166 @@ fn incrbyfloat(ctx: &mut Context, state: &mut State) -> Value {
         .store
         .update(key.clone(), Object::String(formatted.clone()));
     Value::Bulk(formatted)
+}
+
+/// `LCS key1 key2 [LEN] [IDX] [MINMATCHLEN min] [WITHMATCHLEN]` returns the longest
+/// common subsequence of the two string values. `LEN` returns its length instead,
+/// and `IDX` returns the ranges that make up the match in each string.
+pub const LCS: Command = Command {
+    name: "LCS",
+    arity: Arity::Min(3),
+    write: false,
+    auth_required: true,
+    handler: lcs,
+};
+
+fn lcs(ctx: &mut Context, state: &mut State) -> Value {
+    let [first_key, second_key, args @ ..] = ctx.args else {
+        return errors::wrong_args(ctx.command.name);
+    };
+
+    let first_value = match state.store.get(first_key) {
+        Some(Object::String(value)) => value.clone(),
+        Some(_) => {
+            return Value::Error("ERR The specified keys must contain string values".to_string());
+        }
+        None => Vec::new(),
+    };
+    let second_value = match state.store.get(second_key) {
+        Some(Object::String(value)) => value.clone(),
+        Some(_) => {
+            return Value::Error("ERR The specified keys must contain string values".to_string());
+        }
+        None => Vec::new(),
+    };
+
+    let (mut get_idx, mut get_len, mut with_match_len, mut min_match_len) =
+        (false, false, false, 0);
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].to_ascii_uppercase().as_slice() {
+            b"IDX" => get_idx = true,
+            b"LEN" => get_len = true,
+            b"WITHMATCHLEN" => with_match_len = true,
+            b"MINMATCHLEN" => {
+                let Some(next_arg) = args.get(i + 1) else {
+                    return errors::syntax_error();
+                };
+
+                min_match_len = match super::parse_i64(next_arg) {
+                    Some(val) => val.max(0),
+                    None => return errors::not_integer(),
+                };
+
+                i += 1;
+            }
+            _ => return errors::syntax_error(),
+        }
+
+        i += 1;
+    }
+
+    if get_len && get_idx {
+        return Value::Error(
+            "ERR If you want both the length and indexes, please just use IDX.".to_string(),
+        );
+    }
+
+    let first_len = first_value.len();
+    let second_len = second_value.len();
+
+    if (first_len + 1)
+        .checked_mul(second_len + 1)
+        .and_then(|cells| cells.checked_mul(4)) // 4 bytes per u32 cell
+        .is_none_or(|bytes| bytes as u64 > PROTO_MAX_BULK_LEN)
+    {
+        return Value::Error(
+            "ERR Insufficient memory, transient memory for LCS exceeds proto-max-bulk-len"
+                .to_string(),
+        );
+    }
+
+    let mut dp = vec![vec![0u32; second_len + 1]; first_len + 1];
+    for i in (0..first_len).rev() {
+        for j in (0..second_len).rev() {
+            dp[i][j] = if first_value[i] == second_value[j] {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
+        }
+    }
+
+    if get_len {
+        return Value::Integer(dp[0][0] as i64);
+    }
+
+    let mut matching_pairs = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < first_len && j < second_len {
+        if first_value[i] == second_value[j] {
+            matching_pairs.push((i, j));
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+
+    if !get_idx {
+        let lcs = matching_pairs
+            .iter()
+            .map(|&(i, _)| first_value[i])
+            .collect();
+        return Value::Bulk(lcs);
+    }
+
+    let mut ranges = Vec::new();
+    for &(first, second) in matching_pairs.iter().rev() {
+        if let Some((first_start, _, second_start, _)) = ranges.last_mut()
+            && first + 1 == *first_start
+            && second + 1 == *second_start
+        {
+            *first_start = first;
+            *second_start = second;
+        } else {
+            ranges.push((first, first, second, second));
+        }
+    }
+
+    let mut entries = Vec::new();
+    for (first_start, first_end, second_start, second_end) in ranges {
+        let match_len = (first_end - first_start + 1) as i64;
+        if min_match_len != 0 && match_len < min_match_len {
+            continue;
+        }
+
+        let mut entry = vec![
+            Value::Array(vec![
+                Value::Integer(first_start as i64),
+                Value::Integer(first_end as i64),
+            ]),
+            Value::Array(vec![
+                Value::Integer(second_start as i64),
+                Value::Integer(second_end as i64),
+            ]),
+        ];
+        if with_match_len {
+            entry.push(Value::Integer(match_len));
+        }
+
+        entries.push(Value::Array(entry));
+    }
+
+    Value::Array(vec![
+        Value::Bulk(b"matches".to_vec()),
+        Value::Array(entries),
+        Value::Bulk(b"len".to_vec()),
+        Value::Integer(dp[0][0] as i64),
+    ])
 }
 
 /// `MGET key [key ...]` returns the values at the given keys, with nil for each
@@ -627,7 +787,7 @@ fn setrange(ctx: &mut Context, state: &mut State) -> Value {
         return errors::not_integer();
     };
     if offset < 0 {
-        return errors::offset_out_of_range();
+        return Value::Error("ERR offset is out of range".to_string());
     }
 
     if value.is_empty() {
@@ -646,7 +806,9 @@ fn setrange(ctx: &mut Context, state: &mut State) -> Value {
 
     let end = offset as u64 + value.len() as u64;
     if end > PROTO_MAX_BULK_LEN {
-        return errors::string_too_long();
+        return Value::Error(
+            "ERR string exceeds maximum allowed size (proto-max-bulk-len)".to_string(),
+        );
     }
     let end = end as usize;
 
@@ -1516,6 +1678,180 @@ mod tests {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n"]), &mut state()),
             Value::Error("ERR wrong number of arguments for 'incrbyfloat' command".to_string())
+        );
+    }
+
+    // LCS
+
+    #[test]
+    fn lcs_returns_subsequence() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["MSET", "k1", "ohmytext", "k2", "mynewtext"]),
+            &mut state,
+        );
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1", "k2"]), &mut state),
+            Value::Bulk(b"mytext".to_vec())
+        );
+    }
+
+    #[test]
+    fn lcs_len_returns_length() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["MSET", "k1", "ohmytext", "k2", "mynewtext"]),
+            &mut state,
+        );
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1", "k2", "LEN"]), &mut state),
+            Value::Integer(6)
+        );
+    }
+
+    #[test]
+    fn lcs_no_common_subsequence_is_empty() {
+        let mut state = state();
+        dispatch(&cmd(&["MSET", "a", "abc", "b", "xyz"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "a", "b"]), &mut state),
+            Value::Bulk(Vec::new())
+        );
+    }
+
+    #[test]
+    fn lcs_missing_keys_treated_as_empty() {
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "none1", "none2"]), &mut state()),
+            Value::Bulk(Vec::new())
+        );
+    }
+
+    #[test]
+    fn lcs_idx_returns_ranges() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["MSET", "k1", "ohmytext", "k2", "mynewtext"]),
+            &mut state,
+        );
+
+        let range = |a: i64, b: i64, c: i64, d: i64| {
+            Value::Array(vec![
+                Value::Array(vec![Value::Integer(a), Value::Integer(b)]),
+                Value::Array(vec![Value::Integer(c), Value::Integer(d)]),
+            ])
+        };
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1", "k2", "IDX"]), &mut state),
+            Value::Array(vec![
+                Value::Bulk(b"matches".to_vec()),
+                Value::Array(vec![range(4, 7, 5, 8), range(2, 3, 0, 1)]),
+                Value::Bulk(b"len".to_vec()),
+                Value::Integer(6),
+            ])
+        );
+    }
+
+    #[test]
+    fn lcs_idx_minmatchlen_filters_short_ranges() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["MSET", "k1", "ohmytext", "k2", "mynewtext"]),
+            &mut state,
+        );
+        assert_eq!(
+            dispatch(
+                &cmd(&["LCS", "k1", "k2", "IDX", "MINMATCHLEN", "4"]),
+                &mut state
+            ),
+            Value::Array(vec![
+                Value::Bulk(b"matches".to_vec()),
+                Value::Array(vec![Value::Array(vec![
+                    Value::Array(vec![Value::Integer(4), Value::Integer(7)]),
+                    Value::Array(vec![Value::Integer(5), Value::Integer(8)]),
+                ])]),
+                Value::Bulk(b"len".to_vec()),
+                Value::Integer(6),
+            ])
+        );
+    }
+
+    #[test]
+    fn lcs_idx_withmatchlen_appends_lengths() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["MSET", "k1", "ohmytext", "k2", "mynewtext"]),
+            &mut state,
+        );
+
+        let range = |a: i64, b: i64, c: i64, d: i64, len: i64| {
+            Value::Array(vec![
+                Value::Array(vec![Value::Integer(a), Value::Integer(b)]),
+                Value::Array(vec![Value::Integer(c), Value::Integer(d)]),
+                Value::Integer(len),
+            ])
+        };
+        assert_eq!(
+            dispatch(
+                &cmd(&["LCS", "k1", "k2", "IDX", "WITHMATCHLEN"]),
+                &mut state
+            ),
+            Value::Array(vec![
+                Value::Bulk(b"matches".to_vec()),
+                Value::Array(vec![range(4, 7, 5, 8, 4), range(2, 3, 0, 1, 2)]),
+                Value::Bulk(b"len".to_vec()),
+                Value::Integer(6),
+            ])
+        );
+    }
+
+    #[test]
+    fn lcs_len_with_idx_is_error() {
+        let mut state = state();
+        dispatch(&cmd(&["MSET", "k1", "a", "k2", "a"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1", "k2", "LEN", "IDX"]), &mut state),
+            Value::Error(
+                "ERR If you want both the length and indexes, please just use IDX.".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn lcs_wrong_type_is_error() {
+        let mut state = state();
+        dispatch(&cmd(&["SET", "k1", "a"]), &mut state);
+        dispatch(&cmd(&["RPUSH", "k2", "x"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1", "k2"]), &mut state),
+            Value::Error("ERR The specified keys must contain string values".to_string())
+        );
+    }
+
+    #[test]
+    fn lcs_non_integer_minmatchlen_is_error() {
+        assert_eq!(
+            dispatch(
+                &cmd(&["LCS", "a", "b", "IDX", "MINMATCHLEN", "x"]),
+                &mut state()
+            ),
+            Value::Error("ERR value is not an integer or out of range".to_string())
+        );
+    }
+
+    #[test]
+    fn lcs_unknown_option_is_syntax_error() {
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "a", "b", "FOO"]), &mut state()),
+            Value::Error("ERR syntax error".to_string())
+        );
+    }
+
+    #[test]
+    fn lcs_wrong_args() {
+        assert_eq!(
+            dispatch(&cmd(&["LCS", "k1"]), &mut state()),
+            Value::Error("ERR wrong number of arguments for 'lcs' command".to_string())
         );
     }
 

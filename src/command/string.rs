@@ -420,19 +420,20 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Response {
         );
     }
 
-    let mut dp = vec![vec![0u32; second_len + 1]; first_len + 1];
+    let mut dp = vec![0u32; (first_len + 1) * (second_len + 1)];
+    let at = |i: usize, j: usize| i * (second_len + 1) + j;
     for i in (0..first_len).rev() {
         for j in (0..second_len).rev() {
-            dp[i][j] = if first_value[i] == second_value[j] {
-                dp[i + 1][j + 1] + 1
+            dp[at(i, j)] = if first_value[i] == second_value[j] {
+                dp[at(i + 1, j + 1)] + 1
             } else {
-                dp[i + 1][j].max(dp[i][j + 1])
+                dp[at(i + 1, j)].max(dp[at(i, j + 1)])
             };
         }
     }
 
     if get_len {
-        return Response::Integer(dp[0][0] as i64);
+        return Response::Integer(dp[at(0, 0)] as i64);
     }
 
     let mut matching_pairs = Vec::new();
@@ -442,7 +443,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Response {
             matching_pairs.push((i, j));
             i += 1;
             j += 1;
-        } else if dp[i + 1][j] >= dp[i][j + 1] {
+        } else if dp[at(i + 1, j)] >= dp[at(i, j + 1)] {
             i += 1;
         } else {
             j += 1;
@@ -498,7 +499,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Response {
         Response::Bulk(b"matches".to_vec()),
         Response::Array(entries),
         Response::Bulk(b"len".to_vec()),
-        Response::Integer(dp[0][0] as i64),
+        Response::Integer(dp[at(0, 0)] as i64),
     ])
 }
 

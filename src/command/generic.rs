@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, Context, errors};
+use crate::object::Object;
 use crate::resp::Response;
 use crate::server::State;
 use crate::store::{Expiry, Store};
@@ -89,6 +90,24 @@ fn expire(ctx: &mut Context, state: &mut State) -> Response {
     reply
 }
 
+/// `PERSIST key` removes the expiry from `key`, replying with `1` if a TTL was
+/// removed and `0` otherwise.
+pub const PERSIST: Command = Command {
+    name: "PERSIST",
+    arity: Arity::Exact(2),
+    write: true,
+    auth_required: true,
+    handler: persist,
+};
+
+fn persist(ctx: &mut Context, state: &mut State) -> Response {
+    let [key] = ctx.args else {
+        return errors::wrong_args(ctx.command.name);
+    };
+
+    Response::Integer(state.store.persist(key) as i64)
+}
+
 /// `PEXPIREAT key ms-timestamp` sets `key` to expire at an absolute time in
 /// milliseconds since the Unix epoch, replying with `1` if the expiry was set
 /// and `0` if the key does not exist.
@@ -137,22 +156,23 @@ fn ttl(ctx: &mut Context, state: &mut State) -> Response {
     }
 }
 
-/// `PERSIST key` removes the expiry from `key`, replying with `1` if a TTL was
-/// removed and `0` otherwise.
-pub const PERSIST: Command = Command {
-    name: "PERSIST",
+/// `TYPE key` returns the type of the value held at `key`, or `none` if the key
+/// does not exist.
+pub const TYPE: Command = Command {
+    name: "TYPE",
     arity: Arity::Exact(2),
-    write: true,
+    write: false,
     auth_required: true,
-    handler: persist,
+    handler: r#type,
 };
 
-fn persist(ctx: &mut Context, state: &mut State) -> Response {
+fn r#type(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
-    Response::Integer(state.store.persist(key) as i64)
+    let type_name = state.store.get(key).map_or("none", Object::type_name);
+    Response::Simple(type_name.to_string())
 }
 
 /// Applies the absolute expiry `when` (milliseconds since the Unix epoch) to
@@ -324,6 +344,49 @@ mod tests {
         );
     }
 
+    // PERSIST
+
+    #[test]
+    fn removes_existing_expiry() {
+        let mut state = state();
+        dispatch(&cmd(&["SET", "k", "v"]), &mut state);
+        dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["PERSIST", "k"]), &mut state),
+            Response::Integer(1)
+        );
+        assert_eq!(
+            dispatch(&cmd(&["TTL", "k"]), &mut state),
+            Response::Integer(-1)
+        );
+    }
+
+    #[test]
+    fn key_without_expiry_returns_zero() {
+        let mut state = state();
+        dispatch(&cmd(&["SET", "k", "v"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["PERSIST", "k"]), &mut state),
+            Response::Integer(0)
+        );
+    }
+
+    #[test]
+    fn persist_missing_key_returns_zero() {
+        assert_eq!(
+            dispatch(&cmd(&["PERSIST", "nope"]), &mut state()),
+            Response::Integer(0)
+        );
+    }
+
+    #[test]
+    fn persist_wrong_args() {
+        assert_eq!(
+            dispatch(&cmd(&["PERSIST"]), &mut state()),
+            Response::Error("ERR wrong number of arguments for 'persist' command".to_string())
+        );
+    }
+
     // PEXPIREAT
 
     #[test]
@@ -420,46 +483,41 @@ mod tests {
         );
     }
 
-    // PERSIST
+    // TYPE
 
     #[test]
-    fn removes_existing_expiry() {
-        let mut state = state();
-        dispatch(&cmd(&["SET", "k", "v"]), &mut state);
-        dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
-        assert_eq!(
-            dispatch(&cmd(&["PERSIST", "k"]), &mut state),
-            Response::Integer(1)
-        );
-        assert_eq!(
-            dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Response::Integer(-1)
-        );
-    }
-
-    #[test]
-    fn key_without_expiry_returns_zero() {
+    fn type_of_string_is_string() {
         let mut state = state();
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
-            dispatch(&cmd(&["PERSIST", "k"]), &mut state),
-            Response::Integer(0)
+            dispatch(&cmd(&["TYPE", "k"]), &mut state),
+            Response::Simple("string".to_string())
         );
     }
 
     #[test]
-    fn persist_missing_key_returns_zero() {
+    fn type_of_list_is_list() {
+        let mut state = state();
+        dispatch(&cmd(&["RPUSH", "k", "a"]), &mut state);
         assert_eq!(
-            dispatch(&cmd(&["PERSIST", "nope"]), &mut state()),
-            Response::Integer(0)
+            dispatch(&cmd(&["TYPE", "k"]), &mut state),
+            Response::Simple("list".to_string())
         );
     }
 
     #[test]
-    fn persist_wrong_args() {
+    fn type_missing_key_is_none() {
         assert_eq!(
-            dispatch(&cmd(&["PERSIST"]), &mut state()),
-            Response::Error("ERR wrong number of arguments for 'persist' command".to_string())
+            dispatch(&cmd(&["TYPE", "nope"]), &mut state()),
+            Response::Simple("none".to_string())
+        );
+    }
+
+    #[test]
+    fn type_wrong_args() {
+        assert_eq!(
+            dispatch(&cmd(&["TYPE"]), &mut state()),
+            Response::Error("ERR wrong number of arguments for 'type' command".to_string())
         );
     }
 }

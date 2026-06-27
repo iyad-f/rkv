@@ -103,6 +103,7 @@ const COMMANDS: &[Command] = &[
     generic::PERSIST,
     generic::PEXPIREAT,
     generic::TTL,
+    generic::TYPE,
     // List
     list::LINDEX,
     list::LINSERT,

@@ -14,3 +14,13 @@ pub enum Object {
     /// A list of byte strings.
     List(VecDeque<Vec<u8>>),
 }
+
+impl Object {
+    /// The name of this object's type.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::String(_) => "string",
+            Self::List(_) => "list",
+        }
+    }
+}

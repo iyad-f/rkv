@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, Context, errors};
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 
 /// `CONFIG GET key` reads a setting, `CONFIG SET key value` updates one.
@@ -14,7 +14,7 @@ pub const CONFIG: Command = Command {
     handler: config,
 };
 
-fn config(ctx: &mut Context, state: &mut State) -> Value {
+fn config(ctx: &mut Context, state: &mut State) -> Response {
     let Some(subcommand) = ctx.args.first() else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -23,7 +23,7 @@ fn config(ctx: &mut Context, state: &mut State) -> Value {
         b"GET" => config_get(&ctx.args[1..], state),
         b"SET" => config_set(&ctx.args[1..], state),
         b"HELP" => config_help(),
-        _ => Value::Error(format!(
+        _ => Response::Error(format!(
             "ERR unknown subcommand '{}'. Try CONFIG HELP.",
             String::from_utf8_lossy(subcommand)
         )),
@@ -32,23 +32,23 @@ fn config(ctx: &mut Context, state: &mut State) -> Value {
 
 /// Handles `CONFIG GET key`, replying with a `[key, value]` array, or an empty
 /// array if the key is unknown.
-fn config_get(args: &[Vec<u8>], state: &mut State) -> Value {
+fn config_get(args: &[Vec<u8>], state: &mut State) -> Response {
     let [key] = args else {
         return errors::wrong_args("config|get");
     };
     let key = String::from_utf8_lossy(key);
 
     match state.config.get(&key) {
-        Some(value) => Value::Array(vec![
-            Value::Bulk(key.into_owned().into_bytes()),
-            Value::Bulk(value.into_bytes()),
+        Some(value) => Response::Array(vec![
+            Response::Bulk(key.into_owned().into_bytes()),
+            Response::Bulk(value.into_bytes()),
         ]),
-        None => Value::Array(Vec::new()),
+        None => Response::Array(Vec::new()),
     }
 }
 
 /// Handles `CONFIG SET key value`, updating the live configuration.
-fn config_set(args: &[Vec<u8>], state: &mut State) -> Value {
+fn config_set(args: &[Vec<u8>], state: &mut State) -> Response {
     let [key, value] = args else {
         return errors::wrong_args("config|set");
     };
@@ -56,13 +56,13 @@ fn config_set(args: &[Vec<u8>], state: &mut State) -> Value {
     let value = String::from_utf8_lossy(value);
 
     match state.config.set(&key, &value) {
-        Ok(()) => Value::Simple("OK".to_string()),
-        Err(e) => Value::Error(format!("ERR CONFIG SET failed, {e}")),
+        Ok(()) => Response::Simple("OK".to_string()),
+        Err(e) => Response::Error(format!("ERR CONFIG SET failed, {e}")),
     }
 }
 
 /// Handles `CONFIG HELP`, listing the supported subcommands.
-fn config_help() -> Value {
+fn config_help() -> Response {
     const LINES: &[&str] = &[
         "CONFIG <subcommand> [<arg> ...]. Subcommands are:",
         "GET <parameter>",
@@ -73,10 +73,10 @@ fn config_help() -> Value {
         "    Print this help.",
     ];
 
-    Value::Array(
+    Response::Array(
         LINES
             .iter()
-            .map(|line| Value::Bulk(line.as_bytes().to_vec()))
+            .map(|line| Response::Bulk(line.as_bytes().to_vec()))
             .collect(),
     )
 }
@@ -90,8 +90,8 @@ pub const DBSIZE: Command = Command {
     handler: dbsize,
 };
 
-fn dbsize(_ctx: &mut Context, state: &mut State) -> Value {
-    Value::Integer(state.store.len() as i64)
+fn dbsize(_ctx: &mut Context, state: &mut State) -> Response {
+    Response::Integer(state.store.len() as i64)
 }
 
 /// `BGREWRITEAOF` rewrites the append-only file in the background, replying once
@@ -104,23 +104,23 @@ pub const BGREWRITEAOF: Command = Command {
     handler: bgrewriteaof,
 };
 
-fn bgrewriteaof(_ctx: &mut Context, state: &mut State) -> Value {
+fn bgrewriteaof(_ctx: &mut Context, state: &mut State) -> Response {
     if state.aof_rewrite_in_progress() {
-        return Value::Error(
+        return Response::Error(
             "ERR Background append only file rewriting already in progress".to_string(),
         );
     }
 
     match state.start_aof_rewrite() {
-        Ok(()) => Value::Simple("Background append only file rewriting started".to_string()),
-        Err(e) => Value::Error(format!("ERR {e}")),
+        Ok(()) => Response::Simple("Background append only file rewriting started".to_string()),
+        Err(e) => Response::Error(format!("ERR {e}")),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
-    use crate::resp::Value;
+    use crate::resp::Response;
 
     // CONFIG
 
@@ -128,9 +128,9 @@ mod tests {
     fn get_returns_value() {
         assert_eq!(
             dispatch(&cmd(&["CONFIG", "GET", "maxclients"]), &mut state()),
-            Value::Array(vec![
-                Value::Bulk(b"maxclients".to_vec()),
-                Value::Bulk(b"1024".to_vec()),
+            Response::Array(vec![
+                Response::Bulk(b"maxclients".to_vec()),
+                Response::Bulk(b"1024".to_vec()),
             ])
         );
     }
@@ -139,7 +139,7 @@ mod tests {
     fn unknown_subcommand_keeps_original_case() {
         assert_eq!(
             dispatch(&cmd(&["CONFIG", "BadSub"]), &mut state()),
-            Value::Error("ERR unknown subcommand 'BadSub'. Try CONFIG HELP.".to_string())
+            Response::Error("ERR unknown subcommand 'BadSub'. Try CONFIG HELP.".to_string())
         );
     }
 
@@ -147,7 +147,7 @@ mod tests {
     fn get_unknown_key_is_empty() {
         assert_eq!(
             dispatch(&cmd(&["CONFIG", "GET", "nope"]), &mut state()),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
     }
 
@@ -156,13 +156,13 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["CONFIG", "SET", "maxclients", "50"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["CONFIG", "GET", "maxclients"]), &mut state),
-            Value::Array(vec![
-                Value::Bulk(b"maxclients".to_vec()),
-                Value::Bulk(b"50".to_vec()),
+            Response::Array(vec![
+                Response::Bulk(b"maxclients".to_vec()),
+                Response::Bulk(b"50".to_vec()),
             ])
         );
     }
@@ -170,10 +170,10 @@ mod tests {
     #[test]
     fn help_lists_subcommands() {
         match dispatch(&cmd(&["CONFIG", "HELP"]), &mut state()) {
-            Value::Array(lines) => {
+            Response::Array(lines) => {
                 assert_eq!(
                     lines.first(),
-                    Some(&Value::Bulk(
+                    Some(&Response::Bulk(
                         b"CONFIG <subcommand> [<arg> ...]. Subcommands are:".to_vec()
                     ))
                 );
@@ -186,7 +186,10 @@ mod tests {
 
     #[test]
     fn empty_store_is_zero() {
-        assert_eq!(dispatch(&cmd(&["DBSIZE"]), &mut state()), Value::Integer(0));
+        assert_eq!(
+            dispatch(&cmd(&["DBSIZE"]), &mut state()),
+            Response::Integer(0)
+        );
     }
 
     #[test]
@@ -194,7 +197,10 @@ mod tests {
         let mut state = state();
         dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         dispatch(&cmd(&["SET", "b", "2"]), &mut state);
-        assert_eq!(dispatch(&cmd(&["DBSIZE"]), &mut state), Value::Integer(2));
+        assert_eq!(
+            dispatch(&cmd(&["DBSIZE"]), &mut state),
+            Response::Integer(2)
+        );
     }
 
     #[test]
@@ -202,14 +208,17 @@ mod tests {
         let mut state = state();
         dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         dispatch(&cmd(&["SET", "a", "2"]), &mut state);
-        assert_eq!(dispatch(&cmd(&["DBSIZE"]), &mut state), Value::Integer(1));
+        assert_eq!(
+            dispatch(&cmd(&["DBSIZE"]), &mut state),
+            Response::Integer(1)
+        );
     }
 
     #[test]
     fn dbsize_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["DBSIZE", "x"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'dbsize' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'dbsize' command".to_string())
         );
     }
 
@@ -219,7 +228,7 @@ mod tests {
     fn bgrewriteaof_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["BGREWRITEAOF", "x"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'bgrewriteaof' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'bgrewriteaof' command".to_string())
         );
     }
 }

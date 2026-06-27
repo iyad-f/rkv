@@ -4,10 +4,10 @@
 //! Types and parsing for the RESP2 wire protocol.
 
 mod request;
-mod value;
+mod response;
 
 pub use request::Request;
-pub use value::Value;
+pub use response::Response;
 
 /// The RESP line terminator.
 pub(super) const CRLF: &[u8] = b"\r\n";

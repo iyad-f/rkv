@@ -97,7 +97,7 @@ impl Server {
                 Ok(resp::Request::Empty { consumed }) => client.consume(consumed),
                 Ok(resp::Request::Incomplete) => break,
                 Err(e) => {
-                    client.queue(&resp::Value::Error(format!("ERR {e}")).encode());
+                    client.queue(&resp::Response::Error(format!("ERR {e}")).encode());
                     close = true;
                 }
             }

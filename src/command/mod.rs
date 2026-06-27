@@ -17,7 +17,7 @@ mod string;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 use crate::session::Session;
 
@@ -45,7 +45,7 @@ pub struct Command {
     pub auth_required: bool,
 
     /// Runs the command.
-    pub handler: fn(&mut Context, &mut State) -> Value,
+    pub handler: fn(&mut Context, &mut State) -> Response,
 }
 
 /// The per-invocation context of a command.
@@ -133,7 +133,7 @@ static COMMAND_TABLE: LazyLock<HashMap<&'static [u8], &'static Command>> =
 /// Routes a parsed request to its command and returns the reply.
 ///
 /// `argv` is the command name followed by its arguments, and is never empty.
-pub fn dispatch(argv: &[Vec<u8>], state: &mut State, session: &mut Session) -> Value {
+pub fn dispatch(argv: &[Vec<u8>], state: &mut State, session: &mut Session) -> Response {
     let name = &argv[0];
 
     let upper = name.to_ascii_uppercase();
@@ -210,7 +210,7 @@ mod test_utils {
 
     /// Dispatches a command with a throwaway session, for tests that do not
     /// exercise per-connection state.
-    pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Value {
+    pub fn dispatch(argv: &[Vec<u8>], state: &mut State) -> Response {
         super::dispatch(argv, state, &mut Session::default())
     }
 }
@@ -224,7 +224,7 @@ mod tests {
     fn command_name_is_case_insensitive() {
         assert_eq!(
             dispatch(&cmd(&["ping"]), &mut state()),
-            Value::Simple("PONG".to_string())
+            Response::Simple("PONG".to_string())
         );
     }
 
@@ -232,7 +232,7 @@ mod tests {
     fn unknown_command_reports_args() {
         assert_eq!(
             dispatch(&cmd(&["FOOBAR", "x"]), &mut state()),
-            Value::Error(
+            Response::Error(
                 "ERR unknown command 'FOOBAR', with args beginning with: 'x' ".to_string()
             )
         );

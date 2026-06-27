@@ -3,13 +3,13 @@
 
 use super::CRLF;
 
-/// A single value in the RESP2 protocol, used to build replies.
+/// A command response, encoded on the wire per the RESP2 protocol.
 ///
 /// See the [RESP protocol specification][spec] for the full definitions.
 ///
 /// [spec]: https://redis.io/docs/latest/develop/reference/protocol-spec/
 #[derive(Debug, PartialEq)]
-pub enum Value {
+pub enum Response {
     /// A simple string.
     Simple(String),
 
@@ -22,8 +22,8 @@ pub enum Value {
     /// A bulk string, binary-safe.
     Bulk(Vec<u8>),
 
-    /// An array of values.
-    Array(Vec<Value>),
+    /// An array of responses.
+    Array(Vec<Response>),
 
     /// A null bulk string.
     NullBulk,
@@ -32,7 +32,7 @@ pub enum Value {
     NullArray,
 }
 
-impl Value {
+impl Response {
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn encode_simple_string() {
         assert_eq!(
-            Value::Simple("hello".to_string()).encode(),
+            Response::Simple("hello".to_string()).encode(),
             b"+hello\r\n".to_vec()
         );
     }
@@ -99,47 +99,50 @@ mod tests {
     #[test]
     fn encode_error() {
         assert_eq!(
-            Value::Error("ERR".to_string()).encode(),
+            Response::Error("ERR".to_string()).encode(),
             b"-ERR\r\n".to_vec()
         );
     }
 
     #[test]
     fn encode_integer() {
-        assert_eq!(Value::Integer(1000).encode(), b":1000\r\n".to_vec());
-        assert_eq!(Value::Integer(0).encode(), b":0\r\n".to_vec());
-        assert_eq!(Value::Integer(-1000).encode(), b":-1000\r\n".to_vec());
+        assert_eq!(Response::Integer(1000).encode(), b":1000\r\n".to_vec());
+        assert_eq!(Response::Integer(0).encode(), b":0\r\n".to_vec());
+        assert_eq!(Response::Integer(-1000).encode(), b":-1000\r\n".to_vec());
     }
 
     #[test]
     fn encode_bulk_string() {
         assert_eq!(
-            Value::Bulk(b"hello world".to_vec()).encode(),
+            Response::Bulk(b"hello world".to_vec()).encode(),
             b"$11\r\nhello world\r\n".to_vec()
         );
-        assert_eq!(Value::Bulk(b"".to_vec()).encode(), b"$0\r\n\r\n".to_vec());
+        assert_eq!(
+            Response::Bulk(b"".to_vec()).encode(),
+            b"$0\r\n\r\n".to_vec()
+        );
     }
 
     #[test]
     fn encode_null_bulk_string() {
-        assert_eq!(Value::NullBulk.encode(), b"$-1\r\n".to_vec());
+        assert_eq!(Response::NullBulk.encode(), b"$-1\r\n".to_vec());
     }
 
     #[test]
     fn encode_null_array() {
-        assert_eq!(Value::NullArray.encode(), b"*-1\r\n".to_vec());
+        assert_eq!(Response::NullArray.encode(), b"*-1\r\n".to_vec());
     }
 
     #[test]
     fn encode_array() {
         assert_eq!(
-            Value::Array(vec![
-                Value::Bulk(b"hello".to_vec()),
-                Value::Bulk(b"world".to_vec())
+            Response::Array(vec![
+                Response::Bulk(b"hello".to_vec()),
+                Response::Bulk(b"world".to_vec())
             ])
             .encode(),
             b"*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n".to_vec()
         );
-        assert_eq!(Value::Array(vec![]).encode(), b"*0\r\n".to_vec());
+        assert_eq!(Response::Array(vec![]).encode(), b"*0\r\n".to_vec());
     }
 }

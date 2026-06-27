@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use super::{Arity, Command, Context, errors};
 use crate::object::Object;
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 
 /// `RPUSH key value [value ...]` appends each value to the tail of the list at
@@ -18,7 +18,7 @@ pub const RPUSH: Command = Command {
     handler: rpush,
 };
 
-fn rpush(ctx: &mut Context, state: &mut State) -> Value {
+fn rpush(ctx: &mut Context, state: &mut State) -> Response {
     push(ctx, state, End::Tail, false)
 }
 
@@ -32,7 +32,7 @@ pub const LPUSH: Command = Command {
     handler: lpush,
 };
 
-fn lpush(ctx: &mut Context, state: &mut State) -> Value {
+fn lpush(ctx: &mut Context, state: &mut State) -> Response {
     push(ctx, state, End::Head, false)
 }
 
@@ -46,7 +46,7 @@ pub const RPUSHX: Command = Command {
     handler: rpushx,
 };
 
-fn rpushx(ctx: &mut Context, state: &mut State) -> Value {
+fn rpushx(ctx: &mut Context, state: &mut State) -> Response {
     push(ctx, state, End::Tail, true)
 }
 
@@ -60,7 +60,7 @@ pub const LPUSHX: Command = Command {
     handler: lpushx,
 };
 
-fn lpushx(ctx: &mut Context, state: &mut State) -> Value {
+fn lpushx(ctx: &mut Context, state: &mut State) -> Response {
     push(ctx, state, End::Head, true)
 }
 
@@ -73,15 +73,15 @@ pub const LLEN: Command = Command {
     handler: llen,
 };
 
-fn llen(ctx: &mut Context, state: &mut State) -> Value {
+fn llen(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     match state.store.get(key) {
-        Some(Object::List(list)) => Value::Integer(list.len() as i64),
+        Some(Object::List(list)) => Response::Integer(list.len() as i64),
         Some(_) => errors::wrong_type(),
-        None => Value::Integer(0),
+        None => Response::Integer(0),
     }
 }
 
@@ -95,7 +95,7 @@ pub const LRANGE: Command = Command {
     handler: lrange,
 };
 
-fn lrange(ctx: &mut Context, state: &mut State) -> Value {
+fn lrange(ctx: &mut Context, state: &mut State) -> Response {
     let [key, start, stop] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -107,7 +107,7 @@ fn lrange(ctx: &mut Context, state: &mut State) -> Value {
     let list = match state.store.get(key) {
         Some(Object::List(list)) => list,
         Some(_) => return errors::wrong_type(),
-        None => return Value::Array(Vec::new()),
+        None => return Response::Array(Vec::new()),
     };
     let len = list.len() as i64;
 
@@ -118,14 +118,14 @@ fn lrange(ctx: &mut Context, state: &mut State) -> Value {
     let stop = (if stop < 0 { stop + len } else { stop }).min(len - 1);
 
     if start > stop {
-        return Value::Array(Vec::new());
+        return Response::Array(Vec::new());
     }
 
     let elements = list
         .range(start as usize..=stop as usize)
-        .map(|value| Value::Bulk(value.clone()))
+        .map(|value| Response::Bulk(value.clone()))
         .collect();
-    Value::Array(elements)
+    Response::Array(elements)
 }
 
 /// `LPOP key [count]` removes and replies with the first element of the list at
@@ -139,7 +139,7 @@ pub const LPOP: Command = Command {
     handler: lpop,
 };
 
-fn lpop(ctx: &mut Context, state: &mut State) -> Value {
+fn lpop(ctx: &mut Context, state: &mut State) -> Response {
     pop(ctx, state, End::Head)
 }
 
@@ -154,7 +154,7 @@ pub const RPOP: Command = Command {
     handler: rpop,
 };
 
-fn rpop(ctx: &mut Context, state: &mut State) -> Value {
+fn rpop(ctx: &mut Context, state: &mut State) -> Response {
     pop(ctx, state, End::Tail)
 }
 
@@ -169,7 +169,7 @@ pub const LINDEX: Command = Command {
     handler: lindex,
 };
 
-fn lindex(ctx: &mut Context, state: &mut State) -> Value {
+fn lindex(ctx: &mut Context, state: &mut State) -> Response {
     let [key, index] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -179,11 +179,11 @@ fn lindex(ctx: &mut Context, state: &mut State) -> Value {
 
     match state.store.get(key) {
         Some(Object::List(list)) => match resolve_index(index, list.len() as i64) {
-            Some(i) => Value::Bulk(list[i].clone()),
-            None => Value::NullBulk,
+            Some(i) => Response::Bulk(list[i].clone()),
+            None => Response::NullBulk,
         },
         Some(_) => errors::wrong_type(),
-        None => Value::NullBulk,
+        None => Response::NullBulk,
     }
 }
 
@@ -198,7 +198,7 @@ pub const LSET: Command = Command {
     handler: lset,
 };
 
-fn lset(ctx: &mut Context, state: &mut State) -> Value {
+fn lset(ctx: &mut Context, state: &mut State) -> Response {
     let [key, index, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -218,7 +218,7 @@ fn lset(ctx: &mut Context, state: &mut State) -> Value {
 
     list[i] = value.clone();
     state.store.incr_dirty();
-    Value::Simple("OK".to_string())
+    Response::Simple("OK".to_string())
 }
 
 /// `LTRIM key start stop` keeps only the elements of the list at `key` in the
@@ -232,7 +232,7 @@ pub const LTRIM: Command = Command {
     handler: ltrim,
 };
 
-fn ltrim(ctx: &mut Context, state: &mut State) -> Value {
+fn ltrim(ctx: &mut Context, state: &mut State) -> Response {
     let [key, start, stop] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -243,7 +243,7 @@ fn ltrim(ctx: &mut Context, state: &mut State) -> Value {
     let list = match state.store.get_mut(key) {
         Some(Object::List(list)) => list,
         Some(_) => return errors::wrong_type(),
-        None => return Value::Simple("OK".to_string()),
+        None => return Response::Simple("OK".to_string()),
     };
     let len = list.len() as i64;
 
@@ -259,7 +259,7 @@ fn ltrim(ctx: &mut Context, state: &mut State) -> Value {
         state.store.incr_dirty();
     }
 
-    Value::Simple("OK".to_string())
+    Response::Simple("OK".to_string())
 }
 
 /// `LINSERT key BEFORE|AFTER pivot value` inserts `value` before or after the
@@ -273,7 +273,7 @@ pub const LINSERT: Command = Command {
     handler: linsert,
 };
 
-fn linsert(ctx: &mut Context, state: &mut State) -> Value {
+fn linsert(ctx: &mut Context, state: &mut State) -> Response {
     let [key, whence, pivot, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -286,17 +286,17 @@ fn linsert(ctx: &mut Context, state: &mut State) -> Value {
     let list = match state.store.get_mut(key) {
         Some(Object::List(list)) => list,
         Some(_) => return errors::wrong_type(),
-        None => return Value::Integer(0),
+        None => return Response::Integer(0),
     };
 
     let Some(pos) = list.iter().position(|element| element == pivot) else {
-        return Value::Integer(-1);
+        return Response::Integer(-1);
     };
 
     list.insert(if before { pos } else { pos + 1 }, value.clone());
     let len = list.len() as i64;
     state.store.incr_dirty();
-    Value::Integer(len)
+    Response::Integer(len)
 }
 
 /// `LREM key count value` removes occurrences of `value` from the list at `key`.
@@ -311,7 +311,7 @@ pub const LREM: Command = Command {
     handler: lrem,
 };
 
-fn lrem(ctx: &mut Context, state: &mut State) -> Value {
+fn lrem(ctx: &mut Context, state: &mut State) -> Response {
     let [key, count, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -322,7 +322,7 @@ fn lrem(ctx: &mut Context, state: &mut State) -> Value {
     let list = match state.store.get_mut(key) {
         Some(Object::List(list)) => list,
         Some(_) => return errors::wrong_type(),
-        None => return Value::Integer(0),
+        None => return Response::Integer(0),
     };
 
     let mut removed: i64 = 0;
@@ -359,7 +359,7 @@ fn lrem(ctx: &mut Context, state: &mut State) -> Value {
         }
     }
 
-    Value::Integer(removed)
+    Response::Integer(removed)
 }
 
 /// `LMOVE source destination LEFT|RIGHT LEFT|RIGHT` pops an element from one end
@@ -373,7 +373,7 @@ pub const LMOVE: Command = Command {
     handler: lmove,
 };
 
-fn lmove(ctx: &mut Context, state: &mut State) -> Value {
+fn lmove(ctx: &mut Context, state: &mut State) -> Response {
     let [source, destination, from, to] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -397,7 +397,7 @@ pub const LPOS: Command = Command {
     handler: lpos,
 };
 
-fn lpos(ctx: &mut Context, state: &mut State) -> Value {
+fn lpos(ctx: &mut Context, state: &mut State) -> Response {
     let [key, element, options @ ..] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -418,7 +418,7 @@ fn lpos(ctx: &mut Context, state: &mut State) -> Value {
                     return errors::not_integer();
                 };
                 if value == 0 {
-                    return Value::Error(
+                    return Response::Error(
                         "ERR RANK can't be zero: use 1 to start from the first match, 2 from \
                          the second ... or use negative to start from the end of the list"
                             .to_string(),
@@ -428,13 +428,13 @@ fn lpos(ctx: &mut Context, state: &mut State) -> Value {
             }
             b"COUNT" => {
                 let Some(value) = super::parse_i64(value).filter(|value| *value >= 0) else {
-                    return Value::Error("ERR COUNT can't be negative".to_string());
+                    return Response::Error("ERR COUNT can't be negative".to_string());
                 };
                 count = Some(value);
             }
             b"MAXLEN" => {
                 let Some(value) = super::parse_i64(value).filter(|value| *value >= 0) else {
-                    return Value::Error("ERR MAXLEN can't be negative".to_string());
+                    return Response::Error("ERR MAXLEN can't be negative".to_string());
                 };
                 maxlen = value;
             }
@@ -451,9 +451,9 @@ fn lpos(ctx: &mut Context, state: &mut State) -> Value {
         Some(_) => return errors::wrong_type(),
         None => {
             return if count.is_some() {
-                Value::Array(Vec::new())
+                Response::Array(Vec::new())
             } else {
-                Value::NullBulk
+                Response::NullBulk
             };
         }
     };
@@ -480,9 +480,9 @@ fn lpos(ctx: &mut Context, state: &mut State) -> Value {
         }
 
         match count {
-            None => return Value::Integer(position as i64),
+            None => return Response::Integer(position as i64),
             Some(count) => {
-                found.push(Value::Integer(position as i64));
+                found.push(Response::Integer(position as i64));
                 if count != 0 && matches - rank + 1 >= count as u64 {
                     break;
                 }
@@ -491,8 +491,8 @@ fn lpos(ctx: &mut Context, state: &mut State) -> Value {
     }
 
     match count {
-        Some(_) => Value::Array(found),
-        None => Value::NullBulk,
+        Some(_) => Response::Array(found),
+        None => Response::NullBulk,
     }
 }
 
@@ -507,7 +507,7 @@ pub const LMPOP: Command = Command {
     handler: lmpop,
 };
 
-fn lmpop(ctx: &mut Context, state: &mut State) -> Value {
+fn lmpop(ctx: &mut Context, state: &mut State) -> Response {
     let args = ctx.args;
 
     let Some(numkeys) = args
@@ -515,7 +515,7 @@ fn lmpop(ctx: &mut Context, state: &mut State) -> Value {
         .and_then(|n| super::parse_i64(n))
         .filter(|n| *n >= 1)
     else {
-        return Value::Error("ERR numkeys should be greater than 0".to_string());
+        return Response::Error("ERR numkeys should be greater than 0".to_string());
     };
     let numkeys = numkeys as usize;
 
@@ -534,7 +534,7 @@ fn lmpop(ctx: &mut Context, state: &mut State) -> Value {
         [] => 1,
         [option, value] if option.eq_ignore_ascii_case(b"COUNT") => {
             let Some(count) = super::parse_i64(value).filter(|count| *count >= 1) else {
-                return Value::Error("ERR count should be greater than 0".to_string());
+                return Response::Error("ERR count should be greater than 0".to_string());
             };
             count as usize
         }
@@ -551,17 +551,17 @@ fn lmpop(ctx: &mut Context, state: &mut State) -> Value {
 
         let popped = std::iter::from_fn(|| pop_end(list, end))
             .take(count)
-            .map(Value::Bulk)
+            .map(Response::Bulk)
             .collect();
         if list.is_empty() {
             state.store.remove(key);
         } else {
             state.store.incr_dirty();
         }
-        return Value::Array(vec![Value::Bulk(key.to_vec()), Value::Array(popped)]);
+        return Response::Array(vec![Response::Bulk(key.to_vec()), Response::Array(popped)]);
     }
 
-    Value::NullArray
+    Response::NullArray
 }
 
 /// Which end of a list a push or pop acts on.
@@ -578,7 +578,7 @@ enum End {
 /// with the list's new length. Creates the list when the key does not exist,
 /// unless `xx` is set, in which case a missing key is left untouched and replies
 /// `0`. Replies with a type error when the key holds a value that is not a list.
-fn push(ctx: &mut Context, state: &mut State, end: End, xx: bool) -> Value {
+fn push(ctx: &mut Context, state: &mut State, end: End, xx: bool) -> Response {
     let [key, values @ ..] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -588,16 +588,16 @@ fn push(ctx: &mut Context, state: &mut State, end: End, xx: bool) -> Value {
             push_values(list, values, end);
             let len = list.len() as i64;
             state.store.incr_dirty();
-            Value::Integer(len)
+            Response::Integer(len)
         }
         Some(_) => errors::wrong_type(),
-        None if xx => Value::Integer(0),
+        None if xx => Response::Integer(0),
         None => {
             let mut list = VecDeque::new();
             push_values(&mut list, values, end);
             let len = list.len() as i64;
             state.store.set(key.clone(), Object::List(list));
-            Value::Integer(len)
+            Response::Integer(len)
         }
     }
 }
@@ -650,7 +650,13 @@ fn push_end(list: &mut VecDeque<Vec<u8>>, end: End, value: Vec<u8>) {
 /// `destination`, replying with it. Replies nil when `source` is missing, a type
 /// error when either key holds a non-list, creates `destination` if needed, and
 /// deletes `source` if it empties. `source` and `destination` may be the same key.
-fn move_element(state: &mut State, source: &[u8], destination: &[u8], from: End, to: End) -> Value {
+fn move_element(
+    state: &mut State,
+    source: &[u8],
+    destination: &[u8],
+    from: End,
+    to: End,
+) -> Response {
     if let Some(object) = state.store.get(destination)
         && !matches!(object, Object::List(_))
     {
@@ -662,14 +668,14 @@ fn move_element(state: &mut State, source: &[u8], destination: &[u8], from: End,
         let list = match state.store.get_mut(source) {
             Some(Object::List(list)) => list,
             Some(_) => return errors::wrong_type(),
-            None => return Value::NullBulk,
+            None => return Response::NullBulk,
         };
         let Some(value) = pop_end(list, from) else {
-            return Value::NullBulk;
+            return Response::NullBulk;
         };
         push_end(list, to, value.clone());
         state.store.incr_dirty();
-        return Value::Bulk(value);
+        return Response::Bulk(value);
     }
 
     // Pop from the source, deleting it if it empties.
@@ -677,10 +683,10 @@ fn move_element(state: &mut State, source: &[u8], destination: &[u8], from: End,
         let list = match state.store.get_mut(source) {
             Some(Object::List(list)) => list,
             Some(_) => return errors::wrong_type(),
-            None => return Value::NullBulk,
+            None => return Response::NullBulk,
         };
         let Some(value) = pop_end(list, from) else {
-            return Value::NullBulk;
+            return Response::NullBulk;
         };
         if list.is_empty() {
             state.store.remove(source);
@@ -701,7 +707,7 @@ fn move_element(state: &mut State, source: &[u8], destination: &[u8], from: End,
         }
     }
     state.store.incr_dirty();
-    Value::Bulk(value)
+    Response::Bulk(value)
 }
 
 /// Removes elements from the given `end` of the list at `key`. Without a count it
@@ -709,7 +715,7 @@ fn move_element(state: &mut State, source: &[u8], destination: &[u8], from: End,
 /// to that many and replies with them as an array. Deletes the key if the list
 /// becomes empty. Replies nil for a missing key, and a type error when the value
 /// is not a list.
-fn pop(ctx: &mut Context, state: &mut State, end: End) -> Value {
+fn pop(ctx: &mut Context, state: &mut State, end: End) -> Response {
     let (key, count) = match ctx.args {
         [key] => (key, None),
         [key, count] => {
@@ -730,16 +736,16 @@ fn pop(ctx: &mut Context, state: &mut State, end: End) -> Value {
         // A missing key is a nil array with a count, a nil bulk string without.
         None => {
             return if count.is_some() {
-                Value::NullArray
+                Response::NullArray
             } else {
-                Value::NullBulk
+                Response::NullBulk
             };
         }
     };
 
     // A count of zero pops nothing and leaves the list untouched.
     if count == Some(0) {
-        return Value::Array(Vec::new());
+        return Response::Array(Vec::new());
     }
 
     let pop_fn = match end {
@@ -749,15 +755,15 @@ fn pop(ctx: &mut Context, state: &mut State, end: End) -> Value {
 
     let reply = match count {
         None => match pop_fn(list) {
-            Some(value) => Value::Bulk(value),
-            None => return Value::NullBulk,
+            Some(value) => Response::Bulk(value),
+            None => return Response::NullBulk,
         },
         Some(count) => {
             let popped = std::iter::from_fn(|| pop_fn(list))
                 .take(count)
-                .map(Value::Bulk)
+                .map(Response::Bulk)
                 .collect();
-            Value::Array(popped)
+            Response::Array(popped)
         }
     };
 
@@ -774,11 +780,11 @@ fn pop(ctx: &mut Context, state: &mut State, end: End) -> Value {
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
-    use crate::resp::Value;
+    use crate::resp::Response;
 
     /// A bulk-string reply value, for terse assertions.
-    fn bulk(s: &str) -> Value {
-        Value::Bulk(s.as_bytes().to_vec())
+    fn bulk(s: &str) -> Response {
+        Response::Bulk(s.as_bytes().to_vec())
     }
 
     const WRONG_TYPE: &str = "WRONGTYPE Operation against a key holding the wrong kind of value";
@@ -790,11 +796,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b"), bulk("c")])
+            Response::Array(vec![bulk("a"), bulk("b"), bulk("c")])
         );
     }
 
@@ -804,7 +810,7 @@ mod tests {
         dispatch(&cmd(&["LPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("c"), bulk("b"), bulk("a")])
+            Response::Array(vec![bulk("c"), bulk("b"), bulk("a")])
         );
     }
 
@@ -814,7 +820,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["RPUSH", "l", "b", "c"]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
     }
 
@@ -824,7 +830,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["RPUSH", "s", "x"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -836,7 +842,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LLEN", "l"]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
     }
 
@@ -844,7 +850,7 @@ mod tests {
     fn llen_missing_key_is_zero() {
         assert_eq!(
             dispatch(&cmd(&["LLEN", "nope"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -854,7 +860,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LLEN", "s"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -866,7 +872,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c", "d"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "1"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b")])
+            Response::Array(vec![bulk("a"), bulk("b")])
         );
     }
 
@@ -876,7 +882,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c", "d"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "-2", "-1"]), &mut state),
-            Value::Array(vec![bulk("c"), bulk("d")])
+            Response::Array(vec![bulk("c"), bulk("d")])
         );
     }
 
@@ -886,7 +892,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c", "d"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "-100", "100"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b"), bulk("c"), bulk("d")])
+            Response::Array(vec![bulk("a"), bulk("b"), bulk("c"), bulk("d")])
         );
     }
 
@@ -896,7 +902,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "2", "1"]), &mut state),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
     }
 
@@ -904,7 +910,7 @@ mod tests {
     fn lrange_missing_key_is_empty_array() {
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "nope", "0", "-1"]), &mut state()),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
     }
 
@@ -914,7 +920,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "x", "1"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -938,7 +944,7 @@ mod tests {
     fn pop_missing_key_is_nil_bulk() {
         assert_eq!(
             dispatch(&cmd(&["LPOP", "nope"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -949,7 +955,7 @@ mod tests {
         dispatch(&cmd(&["LPOP", "l"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "l"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -959,7 +965,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOP", "l", "2"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b")])
+            Response::Array(vec![bulk("a"), bulk("b")])
         );
     }
 
@@ -969,7 +975,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["RPOP", "l", "2"]), &mut state),
-            Value::Array(vec![bulk("c"), bulk("b")])
+            Response::Array(vec![bulk("c"), bulk("b")])
         );
     }
 
@@ -979,11 +985,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOP", "l", "0"]), &mut state),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
         assert_eq!(
             dispatch(&cmd(&["LLEN", "l"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
     }
 
@@ -993,11 +999,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOP", "l", "5"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b")])
+            Response::Array(vec![bulk("a"), bulk("b")])
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "l"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1005,7 +1011,7 @@ mod tests {
     fn pop_with_count_on_missing_key_is_nil_array() {
         assert_eq!(
             dispatch(&cmd(&["LPOP", "nope", "2"]), &mut state()),
-            Value::NullArray
+            Response::NullArray
         );
     }
 
@@ -1015,7 +1021,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOP", "l", "-1"]), &mut state),
-            Value::Error("ERR value is out of range, must be positive".to_string())
+            Response::Error("ERR value is out of range, must be positive".to_string())
         );
     }
 
@@ -1025,7 +1031,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOP", "s"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1059,11 +1065,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINDEX", "l", "5"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["LINDEX", "l", "-9"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1071,7 +1077,7 @@ mod tests {
     fn lindex_missing_key_is_nil() {
         assert_eq!(
             dispatch(&cmd(&["LINDEX", "nope", "0"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1081,7 +1087,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINDEX", "l", "x"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1091,7 +1097,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINDEX", "s", "0"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1103,11 +1109,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LSET", "l", "1", "B"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("B"), bulk("c")])
+            Response::Array(vec![bulk("a"), bulk("B"), bulk("c")])
         );
     }
 
@@ -1125,7 +1131,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LSET", "l", "5", "x"]), &mut state),
-            Value::Error("ERR index out of range".to_string())
+            Response::Error("ERR index out of range".to_string())
         );
     }
 
@@ -1133,7 +1139,7 @@ mod tests {
     fn lset_missing_key_errors() {
         assert_eq!(
             dispatch(&cmd(&["LSET", "nope", "0", "x"]), &mut state()),
-            Value::Error("ERR no such key".to_string())
+            Response::Error("ERR no such key".to_string())
         );
     }
 
@@ -1143,7 +1149,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LSET", "s", "0", "x"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1154,11 +1160,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["RPUSHX", "nope", "a"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "nope"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1168,11 +1174,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["RPUSHX", "l", "b", "c"]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
         assert_eq!(
             dispatch(&cmd(&["LPUSHX", "l", "x"]), &mut state),
-            Value::Integer(4)
+            Response::Integer(4)
         );
     }
 
@@ -1182,7 +1188,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["RPUSHX", "s", "x"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1194,11 +1200,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c", "d", "e"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LTRIM", "l", "1", "3"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("b"), bulk("c"), bulk("d")])
+            Response::Array(vec![bulk("b"), bulk("c"), bulk("d")])
         );
     }
 
@@ -1209,7 +1215,7 @@ mod tests {
         dispatch(&cmd(&["LTRIM", "l", "2", "1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "l"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1217,7 +1223,7 @@ mod tests {
     fn ltrim_missing_key_is_ok() {
         assert_eq!(
             dispatch(&cmd(&["LTRIM", "nope", "0", "-1"]), &mut state()),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
     }
 
@@ -1229,15 +1235,15 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINSERT", "l", "BEFORE", "b", "X"]), &mut state),
-            Value::Integer(4)
+            Response::Integer(4)
         );
         assert_eq!(
             dispatch(&cmd(&["LINSERT", "l", "AFTER", "b", "Y"]), &mut state),
-            Value::Integer(5)
+            Response::Integer(5)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("X"), bulk("b"), bulk("Y"), bulk("c")])
+            Response::Array(vec![bulk("a"), bulk("X"), bulk("b"), bulk("Y"), bulk("c")])
         );
     }
 
@@ -1247,7 +1253,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINSERT", "l", "BEFORE", "z", "x"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -1255,7 +1261,7 @@ mod tests {
     fn linsert_missing_key_is_zero() {
         assert_eq!(
             dispatch(&cmd(&["LINSERT", "nope", "BEFORE", "a", "x"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1265,7 +1271,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LINSERT", "l", "SIDE", "a", "x"]), &mut state),
-            Value::Error("ERR syntax error".to_string())
+            Response::Error("ERR syntax error".to_string())
         );
     }
 
@@ -1277,11 +1283,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "a", "c", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LREM", "l", "2", "a"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("b"), bulk("c"), bulk("a")])
+            Response::Array(vec![bulk("b"), bulk("c"), bulk("a")])
         );
     }
 
@@ -1291,11 +1297,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "a", "c", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LREM", "l", "-2", "a"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("a"), bulk("b"), bulk("c")])
+            Response::Array(vec![bulk("a"), bulk("b"), bulk("c")])
         );
     }
 
@@ -1305,11 +1311,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "a", "c", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LREM", "l", "0", "a"]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "l", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("b"), bulk("c")])
+            Response::Array(vec![bulk("b"), bulk("c")])
         );
     }
 
@@ -1320,7 +1326,7 @@ mod tests {
         dispatch(&cmd(&["LREM", "l", "0", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "l"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1329,12 +1335,12 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["LREM", "nope", "1", "a"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
         dispatch(&cmd(&["RPUSH", "l", "a", "b"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LREM", "l", "1", "zzz"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1350,11 +1356,11 @@ mod tests {
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "a", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("2"), bulk("3")])
+            Response::Array(vec![bulk("2"), bulk("3")])
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "b", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("1")])
+            Response::Array(vec![bulk("1")])
         );
     }
 
@@ -1368,7 +1374,7 @@ mod tests {
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "r", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("y"), bulk("z"), bulk("x")])
+            Response::Array(vec![bulk("y"), bulk("z"), bulk("x")])
         );
     }
 
@@ -1376,7 +1382,7 @@ mod tests {
     fn lmove_missing_source_is_nil() {
         assert_eq!(
             dispatch(&cmd(&["LMOVE", "nope", "d", "LEFT", "RIGHT"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1387,11 +1393,11 @@ mod tests {
         dispatch(&cmd(&["LMOVE", "s", "d", "LEFT", "RIGHT"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "s"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
         assert_eq!(
             dispatch(&cmd(&["LRANGE", "d", "0", "-1"]), &mut state),
-            Value::Array(vec![bulk("only")])
+            Response::Array(vec![bulk("only")])
         );
     }
 
@@ -1402,11 +1408,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMOVE", "str", "d", "LEFT", "RIGHT"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["LMOVE", "l", "str", "LEFT", "RIGHT"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1416,7 +1422,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "a", "1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMOVE", "a", "b", "UP", "DOWN"]), &mut state),
-            Value::Error("ERR syntax error".to_string())
+            Response::Error("ERR syntax error".to_string())
         );
     }
 
@@ -1428,7 +1434,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "c", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1438,11 +1444,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "a", "b", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a", "RANK", "2"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a", "RANK", "-1"]), &mut state),
-            Value::Integer(4)
+            Response::Integer(4)
         );
     }
 
@@ -1452,14 +1458,14 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b", "a", "b", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a", "COUNT", "2"]), &mut state),
-            Value::Array(vec![Value::Integer(0), Value::Integer(2)])
+            Response::Array(vec![Response::Integer(0), Response::Integer(2)])
         );
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a", "COUNT", "0"]), &mut state),
-            Value::Array(vec![
-                Value::Integer(0),
-                Value::Integer(2),
-                Value::Integer(4)
+            Response::Array(vec![
+                Response::Integer(0),
+                Response::Integer(2),
+                Response::Integer(4)
             ])
         );
     }
@@ -1473,7 +1479,7 @@ mod tests {
                 &cmd(&["LPOS", "l", "a", "RANK", "2", "MAXLEN", "2"]),
                 &mut state
             ),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1483,11 +1489,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a", "b"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "x"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "x", "COUNT", "2"]), &mut state),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
     }
 
@@ -1496,11 +1502,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["LPOS", "nope", "a"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["LPOS", "nope", "a", "COUNT", "1"]), &mut state),
-            Value::Array(vec![])
+            Response::Array(vec![])
         );
     }
 
@@ -1510,7 +1516,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "l", "a", "RANK", "0"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "ERR RANK can't be zero: use 1 to start from the first match, 2 from the \
                  second ... or use negative to start from the end of the list"
                     .to_string()
@@ -1524,7 +1530,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LPOS", "s", "a"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1536,7 +1542,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "b", "x", "y", "z"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "2", "nokey", "b", "LEFT"]), &mut state),
-            Value::Array(vec![bulk("b"), Value::Array(vec![bulk("x")])])
+            Response::Array(vec![bulk("b"), Response::Array(vec![bulk("x")])])
         );
     }
 
@@ -1549,7 +1555,7 @@ mod tests {
                 &cmd(&["LMPOP", "1", "r", "RIGHT", "COUNT", "2"]),
                 &mut state
             ),
-            Value::Array(vec![bulk("r"), Value::Array(vec![bulk("3"), bulk("2")])])
+            Response::Array(vec![bulk("r"), Response::Array(vec![bulk("3"), bulk("2")])])
         );
     }
 
@@ -1557,7 +1563,7 @@ mod tests {
     fn lmpop_all_missing_is_nil_array() {
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "2", "p", "q", "LEFT"]), &mut state()),
-            Value::NullArray
+            Response::NullArray
         );
     }
 
@@ -1568,7 +1574,7 @@ mod tests {
         dispatch(&cmd(&["LMPOP", "1", "k", "LEFT"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1578,7 +1584,7 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "1", "s", "LEFT"]), &mut state),
-            Value::Error(WRONG_TYPE.to_string())
+            Response::Error(WRONG_TYPE.to_string())
         );
     }
 
@@ -1588,11 +1594,11 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "0", "l", "LEFT"]), &mut state),
-            Value::Error("ERR numkeys should be greater than 0".to_string())
+            Response::Error("ERR numkeys should be greater than 0".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "1", "l", "LEFT", "COUNT", "0"]), &mut state),
-            Value::Error("ERR count should be greater than 0".to_string())
+            Response::Error("ERR count should be greater than 0".to_string())
         );
     }
 
@@ -1602,7 +1608,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LMPOP", "1", "l", "UP"]), &mut state),
-            Value::Error("ERR syntax error".to_string())
+            Response::Error("ERR syntax error".to_string())
         );
     }
 }

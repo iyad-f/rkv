@@ -3,7 +3,7 @@
 
 use super::{Arity, Command, Context, errors};
 use crate::object::Object;
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 use crate::store::Store;
 
@@ -20,7 +20,7 @@ pub const APPEND: Command = Command {
     handler: append,
 };
 
-fn append(ctx: &mut Context, state: &mut State) -> Value {
+fn append(ctx: &mut Context, state: &mut State) -> Response {
     let [key, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -33,7 +33,7 @@ fn append(ctx: &mut Context, state: &mut State) -> Value {
     stored.extend_from_slice(value);
     let len = stored.len() as i64;
     state.store.update(key.clone(), Object::String(stored));
-    Value::Integer(len)
+    Response::Integer(len)
 }
 
 /// `DECR key` decrements the integer at `key` by one, replying with the new value.
@@ -45,7 +45,7 @@ pub const DECR: Command = Command {
     handler: decr,
 };
 
-fn decr(ctx: &mut Context, state: &mut State) -> Value {
+fn decr(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -63,7 +63,7 @@ pub const DECRBY: Command = Command {
     handler: decrby,
 };
 
-fn decrby(ctx: &mut Context, state: &mut State) -> Value {
+fn decrby(ctx: &mut Context, state: &mut State) -> Response {
     let [key, decrement] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -73,7 +73,7 @@ fn decrby(ctx: &mut Context, state: &mut State) -> Value {
     };
 
     let Some(delta) = decrement.checked_neg() else {
-        return Value::Error("ERR decrement would overflow".to_string());
+        return Response::Error("ERR decrement would overflow".to_string());
     };
 
     apply_delta(state, key, delta)
@@ -88,15 +88,15 @@ pub const GET: Command = Command {
     handler: get,
 };
 
-fn get(ctx: &mut Context, state: &mut State) -> Value {
+fn get(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     match state.store.get(key) {
-        Some(Object::String(bytes)) => Value::Bulk(bytes.clone()),
+        Some(Object::String(bytes)) => Response::Bulk(bytes.clone()),
         Some(_) => errors::wrong_type(),
-        None => Value::NullBulk,
+        None => Response::NullBulk,
     }
 }
 
@@ -109,7 +109,7 @@ pub const GETDEL: Command = Command {
     handler: getdel,
 };
 
-fn getdel(ctx: &mut Context, state: &mut State) -> Value {
+fn getdel(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -118,10 +118,10 @@ fn getdel(ctx: &mut Context, state: &mut State) -> Value {
         Some(Object::String(bytes)) => {
             let value = bytes.clone();
             state.store.remove(key);
-            Value::Bulk(value)
+            Response::Bulk(value)
         }
         Some(_) => errors::wrong_type(),
-        None => Value::NullBulk,
+        None => Response::NullBulk,
     }
 }
 
@@ -136,7 +136,7 @@ pub const GETEX: Command = Command {
     handler: getex,
 };
 
-fn getex(ctx: &mut Context, state: &mut State) -> Value {
+fn getex(ctx: &mut Context, state: &mut State) -> Response {
     let [key, options @ ..] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -166,7 +166,7 @@ fn getex(ctx: &mut Context, state: &mut State) -> Value {
     let value = match state.store.get(key) {
         Some(Object::String(bytes)) => bytes.clone(),
         Some(_) => return errors::wrong_type(),
-        None => return Value::NullBulk,
+        None => return Response::NullBulk,
     };
 
     match expiry {
@@ -190,7 +190,7 @@ fn getex(ctx: &mut Context, state: &mut State) -> Value {
         }
     }
 
-    Value::Bulk(value)
+    Response::Bulk(value)
 }
 
 /// `GETRANGE key start end` returns the substring of the value at `key` between
@@ -204,7 +204,7 @@ pub const GETRANGE: Command = Command {
     handler: getrange,
 };
 
-fn getrange(ctx: &mut Context, state: &mut State) -> Value {
+fn getrange(ctx: &mut Context, state: &mut State) -> Response {
     let [key, start, end] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -216,7 +216,7 @@ fn getrange(ctx: &mut Context, state: &mut State) -> Value {
     let bytes = match state.store.get(key) {
         Some(Object::String(bytes)) => bytes,
         Some(_) => return errors::wrong_type(),
-        None => return Value::Bulk(Vec::new()),
+        None => return Response::Bulk(Vec::new()),
     };
 
     let len = bytes.len() as i64;
@@ -228,10 +228,10 @@ fn getrange(ctx: &mut Context, state: &mut State) -> Value {
     let end = (if end < 0 { end + len } else { end }).min(len - 1);
 
     if start > end {
-        return Value::Bulk(Vec::new());
+        return Response::Bulk(Vec::new());
     }
 
-    Value::Bulk(bytes[start as usize..=end as usize].to_vec())
+    Response::Bulk(bytes[start as usize..=end as usize].to_vec())
 }
 
 /// `GETSET key value` sets `key` to `value` and returns its old value, or nil if
@@ -244,15 +244,15 @@ pub const GETSET: Command = Command {
     handler: getset,
 };
 
-fn getset(ctx: &mut Context, state: &mut State) -> Value {
+fn getset(ctx: &mut Context, state: &mut State) -> Response {
     let [key, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     let old = match state.store.get(key) {
-        Some(Object::String(bytes)) => Value::Bulk(bytes.clone()),
+        Some(Object::String(bytes)) => Response::Bulk(bytes.clone()),
         Some(_) => return errors::wrong_type(),
-        None => Value::NullBulk,
+        None => Response::NullBulk,
     };
 
     state.store.set(key.clone(), Object::String(value.clone()));
@@ -268,7 +268,7 @@ pub const INCR: Command = Command {
     handler: incr,
 };
 
-fn incr(ctx: &mut Context, state: &mut State) -> Value {
+fn incr(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -286,7 +286,7 @@ pub const INCRBY: Command = Command {
     handler: incrby,
 };
 
-fn incrby(ctx: &mut Context, state: &mut State) -> Value {
+fn incrby(ctx: &mut Context, state: &mut State) -> Response {
     let [key, increment] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -308,7 +308,7 @@ pub const INCRBYFLOAT: Command = Command {
     handler: incrbyfloat,
 };
 
-fn incrbyfloat(ctx: &mut Context, state: &mut State) -> Value {
+fn incrbyfloat(ctx: &mut Context, state: &mut State) -> Response {
     let [key, increment] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -335,7 +335,7 @@ fn incrbyfloat(ctx: &mut Context, state: &mut State) -> Value {
     state
         .store
         .update(key.clone(), Object::String(formatted.clone()));
-    Value::Bulk(formatted)
+    Response::Bulk(formatted)
 }
 
 /// `LCS key1 key2 [LEN] [IDX] [MINMATCHLEN min] [WITHMATCHLEN]` returns the longest
@@ -349,7 +349,7 @@ pub const LCS: Command = Command {
     handler: lcs,
 };
 
-fn lcs(ctx: &mut Context, state: &mut State) -> Value {
+fn lcs(ctx: &mut Context, state: &mut State) -> Response {
     let [first_key, second_key, args @ ..] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -357,14 +357,18 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
     let first_value = match state.store.get(first_key) {
         Some(Object::String(value)) => value.clone(),
         Some(_) => {
-            return Value::Error("ERR The specified keys must contain string values".to_string());
+            return Response::Error(
+                "ERR The specified keys must contain string values".to_string(),
+            );
         }
         None => Vec::new(),
     };
     let second_value = match state.store.get(second_key) {
         Some(Object::String(value)) => value.clone(),
         Some(_) => {
-            return Value::Error("ERR The specified keys must contain string values".to_string());
+            return Response::Error(
+                "ERR The specified keys must contain string values".to_string(),
+            );
         }
         None => Vec::new(),
     };
@@ -397,7 +401,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
     }
 
     if get_len && get_idx {
-        return Value::Error(
+        return Response::Error(
             "ERR If you want both the length and indexes, please just use IDX.".to_string(),
         );
     }
@@ -410,7 +414,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
         .and_then(|cells| cells.checked_mul(4)) // 4 bytes per u32 cell
         .is_none_or(|bytes| bytes as u64 > PROTO_MAX_BULK_LEN)
     {
-        return Value::Error(
+        return Response::Error(
             "ERR Insufficient memory, transient memory for LCS exceeds proto-max-bulk-len"
                 .to_string(),
         );
@@ -428,7 +432,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
     }
 
     if get_len {
-        return Value::Integer(dp[0][0] as i64);
+        return Response::Integer(dp[0][0] as i64);
     }
 
     let mut matching_pairs = Vec::new();
@@ -450,7 +454,7 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
             .iter()
             .map(|&(i, _)| first_value[i])
             .collect();
-        return Value::Bulk(lcs);
+        return Response::Bulk(lcs);
     }
 
     let mut ranges = Vec::new();
@@ -474,27 +478,27 @@ fn lcs(ctx: &mut Context, state: &mut State) -> Value {
         }
 
         let mut entry = vec![
-            Value::Array(vec![
-                Value::Integer(first_start as i64),
-                Value::Integer(first_end as i64),
+            Response::Array(vec![
+                Response::Integer(first_start as i64),
+                Response::Integer(first_end as i64),
             ]),
-            Value::Array(vec![
-                Value::Integer(second_start as i64),
-                Value::Integer(second_end as i64),
+            Response::Array(vec![
+                Response::Integer(second_start as i64),
+                Response::Integer(second_end as i64),
             ]),
         ];
         if with_match_len {
-            entry.push(Value::Integer(match_len));
+            entry.push(Response::Integer(match_len));
         }
 
-        entries.push(Value::Array(entry));
+        entries.push(Response::Array(entry));
     }
 
-    Value::Array(vec![
-        Value::Bulk(b"matches".to_vec()),
-        Value::Array(entries),
-        Value::Bulk(b"len".to_vec()),
-        Value::Integer(dp[0][0] as i64),
+    Response::Array(vec![
+        Response::Bulk(b"matches".to_vec()),
+        Response::Array(entries),
+        Response::Bulk(b"len".to_vec()),
+        Response::Integer(dp[0][0] as i64),
     ])
 }
 
@@ -508,17 +512,17 @@ pub const MGET: Command = Command {
     handler: mget,
 };
 
-fn mget(ctx: &mut Context, state: &mut State) -> Value {
+fn mget(ctx: &mut Context, state: &mut State) -> Response {
     let values = ctx
         .args
         .iter()
         .map(|key| match state.store.get(key) {
-            Some(Object::String(bytes)) => Value::Bulk(bytes.clone()),
-            _ => Value::NullBulk,
+            Some(Object::String(bytes)) => Response::Bulk(bytes.clone()),
+            _ => Response::NullBulk,
         })
         .collect();
 
-    Value::Array(values)
+    Response::Array(values)
 }
 
 /// `MSET key value [key value ...]` sets each key to its value, discarding any
@@ -531,7 +535,7 @@ pub const MSET: Command = Command {
     handler: mset,
 };
 
-fn mset(ctx: &mut Context, state: &mut State) -> Value {
+fn mset(ctx: &mut Context, state: &mut State) -> Response {
     if !ctx.args.len().is_multiple_of(2) {
         return errors::wrong_args(ctx.command.name);
     }
@@ -542,7 +546,7 @@ fn mset(ctx: &mut Context, state: &mut State) -> Value {
             .set(pair[0].clone(), Object::String(pair[1].clone()));
     }
 
-    Value::Simple("OK".to_string())
+    Response::Simple("OK".to_string())
 }
 
 /// `MSETNX key value [key value ...]` sets each key to its value only if none of
@@ -555,7 +559,7 @@ pub const MSETNX: Command = Command {
     handler: msetnx,
 };
 
-fn msetnx(ctx: &mut Context, state: &mut State) -> Value {
+fn msetnx(ctx: &mut Context, state: &mut State) -> Response {
     if !ctx.args.len().is_multiple_of(2) {
         return errors::wrong_args(ctx.command.name);
     }
@@ -565,7 +569,7 @@ fn msetnx(ctx: &mut Context, state: &mut State) -> Value {
         .chunks_exact(2)
         .any(|pair| state.store.contains_key(&pair[0]))
     {
-        return Value::Integer(0);
+        return Response::Integer(0);
     }
 
     for pair in ctx.args.chunks_exact(2) {
@@ -574,7 +578,7 @@ fn msetnx(ctx: &mut Context, state: &mut State) -> Value {
             .set(pair[0].clone(), Object::String(pair[1].clone()));
     }
 
-    Value::Integer(1)
+    Response::Integer(1)
 }
 
 /// `PSETEX key milliseconds value` sets `key` to `value` with a TTL of
@@ -587,7 +591,7 @@ pub const PSETEX: Command = Command {
     handler: psetex,
 };
 
-fn psetex(ctx: &mut Context, state: &mut State) -> Value {
+fn psetex(ctx: &mut Context, state: &mut State) -> Response {
     set_with_ttl(ctx, state, false)
 }
 
@@ -641,7 +645,7 @@ struct SetOptions {
 }
 
 impl SetOptions {
-    fn parse(options: &[Vec<u8>], command: &str) -> Result<Self, Value> {
+    fn parse(options: &[Vec<u8>], command: &str) -> Result<Self, Response> {
         let mut opts = SetOptions::default();
         let mut expiry_kind = None;
         let mut i = 0;
@@ -682,7 +686,7 @@ impl SetOptions {
 
 /// Sets `slot` to `value`, erroring when a different value was already set.
 /// Repeating the same value is allowed.
-fn set_once<T: PartialEq>(slot: &mut Option<T>, value: T) -> Result<(), Value> {
+fn set_once<T: PartialEq>(slot: &mut Option<T>, value: T) -> Result<(), Response> {
     if slot.as_ref().is_some_and(|existing| existing != &value) {
         return Err(errors::syntax_error());
     }
@@ -690,7 +694,7 @@ fn set_once<T: PartialEq>(slot: &mut Option<T>, value: T) -> Result<(), Value> {
     Ok(())
 }
 
-fn set(ctx: &mut Context, state: &mut State) -> Value {
+fn set(ctx: &mut Context, state: &mut State) -> Response {
     let [key, value, options @ ..] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -704,12 +708,12 @@ fn set(ctx: &mut Context, state: &mut State) -> Value {
     // when an `NX`/`XX` condition aborts the write below.
     let old = if opts.get {
         match state.store.get(key) {
-            Some(Object::String(bytes)) => Value::Bulk(bytes.clone()),
+            Some(Object::String(bytes)) => Response::Bulk(bytes.clone()),
             Some(_) => return errors::wrong_type(),
-            None => Value::NullBulk,
+            None => Response::NullBulk,
         }
     } else {
-        Value::NullBulk
+        Response::NullBulk
     };
 
     let exists = state.store.contains_key(key);
@@ -719,7 +723,7 @@ fn set(ctx: &mut Context, state: &mut State) -> Value {
         None => false,
     };
     if aborted {
-        return if opts.get { old } else { Value::NullBulk };
+        return if opts.get { old } else { Response::NullBulk };
     }
 
     store_string(state, key, value, opts.expiry);
@@ -728,7 +732,7 @@ fn set(ctx: &mut Context, state: &mut State) -> Value {
     if opts.get {
         old
     } else {
-        Value::Simple("OK".to_string())
+        Response::Simple("OK".to_string())
     }
 }
 
@@ -741,7 +745,7 @@ pub const SETEX: Command = Command {
     handler: setex,
 };
 
-fn setex(ctx: &mut Context, state: &mut State) -> Value {
+fn setex(ctx: &mut Context, state: &mut State) -> Response {
     set_with_ttl(ctx, state, true)
 }
 
@@ -755,17 +759,17 @@ pub const SETNX: Command = Command {
     handler: setnx,
 };
 
-fn setnx(ctx: &mut Context, state: &mut State) -> Value {
+fn setnx(ctx: &mut Context, state: &mut State) -> Response {
     let [key, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     if state.store.contains_key(key) {
-        return Value::Integer(0);
+        return Response::Integer(0);
     }
 
     state.store.set(key.clone(), Object::String(value.clone()));
-    Value::Integer(1)
+    Response::Integer(1)
 }
 
 /// `SETRANGE key offset value` overwrites the value at `key` from `offset`,
@@ -778,7 +782,7 @@ pub const SETRANGE: Command = Command {
     handler: setrange,
 };
 
-fn setrange(ctx: &mut Context, state: &mut State) -> Value {
+fn setrange(ctx: &mut Context, state: &mut State) -> Response {
     let [key, offset, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -787,14 +791,14 @@ fn setrange(ctx: &mut Context, state: &mut State) -> Value {
         return errors::not_integer();
     };
     if offset < 0 {
-        return Value::Error("ERR offset is out of range".to_string());
+        return Response::Error("ERR offset is out of range".to_string());
     }
 
     if value.is_empty() {
         return match state.store.get(key) {
-            Some(Object::String(bytes)) => Value::Integer(bytes.len() as i64),
+            Some(Object::String(bytes)) => Response::Integer(bytes.len() as i64),
             Some(_) => errors::wrong_type(),
-            None => Value::Integer(0),
+            None => Response::Integer(0),
         };
     }
 
@@ -806,7 +810,7 @@ fn setrange(ctx: &mut Context, state: &mut State) -> Value {
 
     let end = offset as u64 + value.len() as u64;
     if end > PROTO_MAX_BULK_LEN {
-        return Value::Error(
+        return Response::Error(
             "ERR string exceeds maximum allowed size (proto-max-bulk-len)".to_string(),
         );
     }
@@ -819,7 +823,7 @@ fn setrange(ctx: &mut Context, state: &mut State) -> Value {
 
     let len = stored.len() as i64;
     state.store.update(key.clone(), Object::String(stored));
-    Value::Integer(len)
+    Response::Integer(len)
 }
 
 /// `STRLEN key` returns the length of the string at `key`, or `0` if it is missing.
@@ -831,15 +835,15 @@ pub const STRLEN: Command = Command {
     handler: strlen,
 };
 
-fn strlen(ctx: &mut Context, state: &mut State) -> Value {
+fn strlen(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     match state.store.get(key) {
-        Some(Object::String(bytes)) => Value::Integer(bytes.len() as i64),
+        Some(Object::String(bytes)) => Response::Integer(bytes.len() as i64),
         Some(_) => errors::wrong_type(),
-        None => Value::Integer(0),
+        None => Response::Integer(0),
     }
 }
 
@@ -856,7 +860,7 @@ pub const SUBSTR: Command = Command {
 
 /// Adds `delta` to the integer stored at `key`, treating a missing key as 0,
 /// and replies with the new value.
-fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
+fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Response {
     let current = match state.store.get(key) {
         Some(Object::String(bytes)) => match super::parse_i64(bytes) {
             Some(current) => current,
@@ -873,7 +877,7 @@ fn apply_delta(state: &mut State, key: &[u8], delta: i64) -> Value {
     state
         .store
         .update(key.to_vec(), Object::String(next.to_string().into_bytes()));
-    Value::Integer(next)
+    Response::Integer(next)
 }
 
 /// Parses `bytes` as a float. NaN is rejected. An infinite result is accepted
@@ -912,7 +916,7 @@ fn resolve_deadline(
     seconds: bool,
     absolute: bool,
     command: &str,
-) -> Result<i64, Value> {
+) -> Result<i64, Response> {
     let Some(value) = super::parse_i64(raw) else {
         return Err(errors::not_integer());
     };
@@ -973,7 +977,7 @@ fn canonical_set(key: &[u8], value: &[u8], expiry: Expiry) -> Vec<Vec<u8>> {
 }
 
 /// Stores `key value` with a required TTL taken from the second argument, in seconds or milliseconds.
-fn set_with_ttl(ctx: &mut Context, state: &mut State, seconds: bool) -> Value {
+fn set_with_ttl(ctx: &mut Context, state: &mut State, seconds: bool) -> Response {
     let [key, ttl, value] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -986,13 +990,13 @@ fn set_with_ttl(ctx: &mut Context, state: &mut State, seconds: bool) -> Value {
     let expiry = Expiry::At(deadline);
     store_string(state, key, value, expiry);
     ctx.rewrite = Some(canonical_set(key, value, expiry));
-    Value::Simple("OK".to_string())
+    Response::Simple("OK".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
-    use crate::resp::Value;
+    use crate::resp::Response;
 
     // APPEND
 
@@ -1001,11 +1005,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["APPEND", "k", "hello"]), &mut state),
-            Value::Integer(5)
+            Response::Integer(5)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"hello".to_vec())
+            Response::Bulk(b"hello".to_vec())
         );
     }
 
@@ -1015,11 +1019,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "hello"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["APPEND", "k", " world"]), &mut state),
-            Value::Integer(11)
+            Response::Integer(11)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"hello world".to_vec())
+            Response::Bulk(b"hello world".to_vec())
         );
     }
 
@@ -1028,11 +1032,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["APPEND", "k", "ab"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
         assert_eq!(
             dispatch(&cmd(&["APPEND", "k", "cde"]), &mut state),
-            Value::Integer(5)
+            Response::Integer(5)
         );
     }
 
@@ -1042,7 +1046,7 @@ mod tests {
     fn missing_key_starts_at_minus_one() {
         assert_eq!(
             dispatch(&cmd(&["DECR", "n"]), &mut state()),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -1052,7 +1056,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "5"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DECR", "n"]), &mut state),
-            Value::Integer(4)
+            Response::Integer(4)
         );
     }
 
@@ -1062,7 +1066,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "abc"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DECR", "n"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1072,7 +1076,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "-9223372036854775808"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DECR", "n"]), &mut state),
-            Value::Error("ERR increment or decrement would overflow".to_string())
+            Response::Error("ERR increment or decrement would overflow".to_string())
         );
     }
 
@@ -1080,7 +1084,7 @@ mod tests {
     fn decr_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["DECR"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'decr' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'decr' command".to_string())
         );
     }
 
@@ -1090,7 +1094,7 @@ mod tests {
     fn subtracts_from_missing_key() {
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n", "5"]), &mut state()),
-            Value::Integer(-5)
+            Response::Integer(-5)
         );
     }
 
@@ -1100,7 +1104,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "10"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n", "3"]), &mut state),
-            Value::Integer(7)
+            Response::Integer(7)
         );
     }
 
@@ -1110,7 +1114,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "10"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n", "-5"]), &mut state),
-            Value::Integer(15)
+            Response::Integer(15)
         );
     }
 
@@ -1118,7 +1122,7 @@ mod tests {
     fn non_integer_decrement_is_error() {
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n", "abc"]), &mut state()),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1126,7 +1130,7 @@ mod tests {
     fn unnegatable_decrement_is_error() {
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n", "-9223372036854775808"]), &mut state()),
-            Value::Error("ERR decrement would overflow".to_string())
+            Response::Error("ERR decrement would overflow".to_string())
         );
     }
 
@@ -1134,7 +1138,7 @@ mod tests {
     fn decrby_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["DECRBY", "n"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'decrby' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'decrby' command".to_string())
         );
     }
 
@@ -1144,7 +1148,7 @@ mod tests {
     fn missing_key_is_null() {
         assert_eq!(
             dispatch(&cmd(&["GET", "nope"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1152,7 +1156,7 @@ mod tests {
     fn wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["GET"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'get' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'get' command".to_string())
         );
     }
 
@@ -1164,16 +1168,19 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETDEL", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
-        assert_eq!(dispatch(&cmd(&["GET", "k"]), &mut state), Value::NullBulk);
+        assert_eq!(
+            dispatch(&cmd(&["GET", "k"]), &mut state),
+            Response::NullBulk
+        );
     }
 
     #[test]
     fn getdel_missing_is_null() {
         assert_eq!(
             dispatch(&cmd(&["GETDEL", "nope"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1183,7 +1190,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETDEL", "k"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -1193,7 +1200,7 @@ mod tests {
     fn getdel_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["GETDEL"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'getdel' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'getdel' command".to_string())
         );
     }
 
@@ -1206,11 +1213,11 @@ mod tests {
         dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -1221,11 +1228,11 @@ mod tests {
         dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "k", "PERSIST"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -1235,11 +1242,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "k", "EX", "50"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(50)
+            Response::Integer(50)
         );
     }
 
@@ -1249,11 +1256,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "k", "EXAT", "1"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -1261,7 +1268,7 @@ mod tests {
     fn getex_missing_is_null() {
         assert_eq!(
             dispatch(&cmd(&["GETEX", "nope"]), &mut state()),
-            Value::NullBulk
+            Response::NullBulk
         );
     }
 
@@ -1271,7 +1278,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "l"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -1283,7 +1290,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETEX", "k", "EX", "0"]), &mut state),
-            Value::Error("ERR invalid expire time in 'getex' command".to_string())
+            Response::Error("ERR invalid expire time in 'getex' command".to_string())
         );
     }
 
@@ -1296,7 +1303,7 @@ mod tests {
         ] {
             assert_eq!(
                 dispatch(&cmd(&opts), &mut state),
-                Value::Error("ERR syntax error".to_string()),
+                Response::Error("ERR syntax error".to_string()),
                 "{opts:?}"
             );
         }
@@ -1310,7 +1317,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "0", "4"]), &mut state),
-            Value::Bulk(b"Hello".to_vec())
+            Response::Bulk(b"Hello".to_vec())
         );
     }
 
@@ -1320,7 +1327,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "-5", "-1"]), &mut state),
-            Value::Bulk(b"World".to_vec())
+            Response::Bulk(b"World".to_vec())
         );
     }
 
@@ -1330,7 +1337,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "0", "100"]), &mut state),
-            Value::Bulk(b"Hello World".to_vec())
+            Response::Bulk(b"Hello World".to_vec())
         );
     }
 
@@ -1340,7 +1347,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "5", "2"]), &mut state),
-            Value::Bulk(Vec::new())
+            Response::Bulk(Vec::new())
         );
     }
 
@@ -1350,7 +1357,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "100", "200"]), &mut state),
-            Value::Bulk(Vec::new())
+            Response::Bulk(Vec::new())
         );
     }
 
@@ -1358,7 +1365,7 @@ mod tests {
     fn getrange_missing_key_is_empty() {
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "nope", "0", "-1"]), &mut state()),
-            Value::Bulk(Vec::new())
+            Response::Bulk(Vec::new())
         );
     }
 
@@ -1368,7 +1375,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "a", "2"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1378,7 +1385,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "l", "0", "-1"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -1388,7 +1395,7 @@ mod tests {
     fn getrange_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["GETRANGE", "k", "0"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'getrange' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'getrange' command".to_string())
         );
     }
 
@@ -1400,11 +1407,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETSET", "k", "v2"]), &mut state),
-            Value::Bulk(b"v1".to_vec())
+            Response::Bulk(b"v1".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v2".to_vec())
+            Response::Bulk(b"v2".to_vec())
         );
     }
 
@@ -1413,11 +1420,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["GETSET", "k", "v"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
     }
 
@@ -1429,7 +1436,7 @@ mod tests {
         dispatch(&cmd(&["GETSET", "k", "v2"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -1439,7 +1446,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GETSET", "k", "v"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -1449,7 +1456,7 @@ mod tests {
     fn getset_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["GETSET", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'getset' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'getset' command".to_string())
         );
     }
 
@@ -1459,7 +1466,7 @@ mod tests {
     fn missing_key_starts_at_one() {
         assert_eq!(
             dispatch(&cmd(&["INCR", "n"]), &mut state()),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -1469,7 +1476,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "5"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCR", "n"]), &mut state),
-            Value::Integer(6)
+            Response::Integer(6)
         );
     }
 
@@ -1479,7 +1486,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "abc"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCR", "n"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1489,7 +1496,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "9223372036854775807"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCR", "n"]), &mut state),
-            Value::Error("ERR increment or decrement would overflow".to_string())
+            Response::Error("ERR increment or decrement would overflow".to_string())
         );
     }
 
@@ -1497,7 +1504,7 @@ mod tests {
     fn incr_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["INCR"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'incr' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'incr' command".to_string())
         );
     }
 
@@ -1507,7 +1514,7 @@ mod tests {
     fn adds_to_missing_key() {
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n", "5"]), &mut state()),
-            Value::Integer(5)
+            Response::Integer(5)
         );
     }
 
@@ -1517,7 +1524,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "10"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n", "5"]), &mut state),
-            Value::Integer(15)
+            Response::Integer(15)
         );
     }
 
@@ -1527,7 +1534,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "10"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n", "-3"]), &mut state),
-            Value::Integer(7)
+            Response::Integer(7)
         );
     }
 
@@ -1535,7 +1542,7 @@ mod tests {
     fn non_integer_increment_is_error() {
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n", "abc"]), &mut state()),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1545,7 +1552,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "abc"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n", "5"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1553,7 +1560,7 @@ mod tests {
     fn incrby_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["INCRBY", "n"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'incrby' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'incrby' command".to_string())
         );
     }
 
@@ -1563,7 +1570,7 @@ mod tests {
     fn incrbyfloat_adds_to_missing_key() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "0.1"]), &mut state()),
-            Value::Bulk(b"0.10000000000000001".to_vec())
+            Response::Bulk(b"0.10000000000000001".to_vec())
         );
     }
 
@@ -1573,7 +1580,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "10.5"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "0.1"]), &mut state),
-            Value::Bulk(b"10.59999999999999964".to_vec())
+            Response::Bulk(b"10.59999999999999964".to_vec())
         );
     }
 
@@ -1583,7 +1590,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "3"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "1.0"]), &mut state),
-            Value::Bulk(b"4".to_vec())
+            Response::Bulk(b"4".to_vec())
         );
     }
 
@@ -1593,7 +1600,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "5.0e3"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "200"]), &mut state),
-            Value::Bulk(b"5200".to_vec())
+            Response::Bulk(b"5200".to_vec())
         );
     }
 
@@ -1605,7 +1612,7 @@ mod tests {
         dispatch(&cmd(&["INCRBYFLOAT", "n", "1.0"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "n"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -1615,7 +1622,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "abc"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "1.0"]), &mut state),
-            Value::Error("ERR value is not a valid float".to_string())
+            Response::Error("ERR value is not a valid float".to_string())
         );
     }
 
@@ -1623,7 +1630,7 @@ mod tests {
     fn incrbyfloat_non_float_increment_is_error() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "abc"]), &mut state()),
-            Value::Error("ERR value is not a valid float".to_string())
+            Response::Error("ERR value is not a valid float".to_string())
         );
     }
 
@@ -1631,7 +1638,7 @@ mod tests {
     fn incrbyfloat_nan_increment_is_error() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "nan"]), &mut state()),
-            Value::Error("ERR value is not a valid float".to_string())
+            Response::Error("ERR value is not a valid float".to_string())
         );
     }
 
@@ -1641,7 +1648,7 @@ mod tests {
         dispatch(&cmd(&["SET", "n", "1e308"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "1e308"]), &mut state),
-            Value::Error("ERR increment would produce NaN or Infinity".to_string())
+            Response::Error("ERR increment would produce NaN or Infinity".to_string())
         );
     }
 
@@ -1649,7 +1656,7 @@ mod tests {
     fn incrbyfloat_infinity_literal_is_accepted_then_errors() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "inf"]), &mut state()),
-            Value::Error("ERR increment would produce NaN or Infinity".to_string())
+            Response::Error("ERR increment would produce NaN or Infinity".to_string())
         );
     }
 
@@ -1657,7 +1664,7 @@ mod tests {
     fn incrbyfloat_overflowing_magnitude_is_invalid() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n", "1e400"]), &mut state()),
-            Value::Error("ERR value is not a valid float".to_string())
+            Response::Error("ERR value is not a valid float".to_string())
         );
     }
 
@@ -1667,7 +1674,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "l", "1.0"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -1677,7 +1684,7 @@ mod tests {
     fn incrbyfloat_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["INCRBYFLOAT", "n"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'incrbyfloat' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'incrbyfloat' command".to_string())
         );
     }
 
@@ -1692,7 +1699,7 @@ mod tests {
         );
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1", "k2"]), &mut state),
-            Value::Bulk(b"mytext".to_vec())
+            Response::Bulk(b"mytext".to_vec())
         );
     }
 
@@ -1705,7 +1712,7 @@ mod tests {
         );
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1", "k2", "LEN"]), &mut state),
-            Value::Integer(6)
+            Response::Integer(6)
         );
     }
 
@@ -1715,7 +1722,7 @@ mod tests {
         dispatch(&cmd(&["MSET", "a", "abc", "b", "xyz"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LCS", "a", "b"]), &mut state),
-            Value::Bulk(Vec::new())
+            Response::Bulk(Vec::new())
         );
     }
 
@@ -1723,7 +1730,7 @@ mod tests {
     fn lcs_missing_keys_treated_as_empty() {
         assert_eq!(
             dispatch(&cmd(&["LCS", "none1", "none2"]), &mut state()),
-            Value::Bulk(Vec::new())
+            Response::Bulk(Vec::new())
         );
     }
 
@@ -1736,18 +1743,18 @@ mod tests {
         );
 
         let range = |a: i64, b: i64, c: i64, d: i64| {
-            Value::Array(vec![
-                Value::Array(vec![Value::Integer(a), Value::Integer(b)]),
-                Value::Array(vec![Value::Integer(c), Value::Integer(d)]),
+            Response::Array(vec![
+                Response::Array(vec![Response::Integer(a), Response::Integer(b)]),
+                Response::Array(vec![Response::Integer(c), Response::Integer(d)]),
             ])
         };
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1", "k2", "IDX"]), &mut state),
-            Value::Array(vec![
-                Value::Bulk(b"matches".to_vec()),
-                Value::Array(vec![range(4, 7, 5, 8), range(2, 3, 0, 1)]),
-                Value::Bulk(b"len".to_vec()),
-                Value::Integer(6),
+            Response::Array(vec![
+                Response::Bulk(b"matches".to_vec()),
+                Response::Array(vec![range(4, 7, 5, 8), range(2, 3, 0, 1)]),
+                Response::Bulk(b"len".to_vec()),
+                Response::Integer(6),
             ])
         );
     }
@@ -1764,14 +1771,14 @@ mod tests {
                 &cmd(&["LCS", "k1", "k2", "IDX", "MINMATCHLEN", "4"]),
                 &mut state
             ),
-            Value::Array(vec![
-                Value::Bulk(b"matches".to_vec()),
-                Value::Array(vec![Value::Array(vec![
-                    Value::Array(vec![Value::Integer(4), Value::Integer(7)]),
-                    Value::Array(vec![Value::Integer(5), Value::Integer(8)]),
+            Response::Array(vec![
+                Response::Bulk(b"matches".to_vec()),
+                Response::Array(vec![Response::Array(vec![
+                    Response::Array(vec![Response::Integer(4), Response::Integer(7)]),
+                    Response::Array(vec![Response::Integer(5), Response::Integer(8)]),
                 ])]),
-                Value::Bulk(b"len".to_vec()),
-                Value::Integer(6),
+                Response::Bulk(b"len".to_vec()),
+                Response::Integer(6),
             ])
         );
     }
@@ -1785,10 +1792,10 @@ mod tests {
         );
 
         let range = |a: i64, b: i64, c: i64, d: i64, len: i64| {
-            Value::Array(vec![
-                Value::Array(vec![Value::Integer(a), Value::Integer(b)]),
-                Value::Array(vec![Value::Integer(c), Value::Integer(d)]),
-                Value::Integer(len),
+            Response::Array(vec![
+                Response::Array(vec![Response::Integer(a), Response::Integer(b)]),
+                Response::Array(vec![Response::Integer(c), Response::Integer(d)]),
+                Response::Integer(len),
             ])
         };
         assert_eq!(
@@ -1796,11 +1803,11 @@ mod tests {
                 &cmd(&["LCS", "k1", "k2", "IDX", "WITHMATCHLEN"]),
                 &mut state
             ),
-            Value::Array(vec![
-                Value::Bulk(b"matches".to_vec()),
-                Value::Array(vec![range(4, 7, 5, 8, 4), range(2, 3, 0, 1, 2)]),
-                Value::Bulk(b"len".to_vec()),
-                Value::Integer(6),
+            Response::Array(vec![
+                Response::Bulk(b"matches".to_vec()),
+                Response::Array(vec![range(4, 7, 5, 8, 4), range(2, 3, 0, 1, 2)]),
+                Response::Bulk(b"len".to_vec()),
+                Response::Integer(6),
             ])
         );
     }
@@ -1811,7 +1818,7 @@ mod tests {
         dispatch(&cmd(&["MSET", "k1", "a", "k2", "a"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1", "k2", "LEN", "IDX"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "ERR If you want both the length and indexes, please just use IDX.".to_string()
             )
         );
@@ -1824,7 +1831,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "k2", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1", "k2"]), &mut state),
-            Value::Error("ERR The specified keys must contain string values".to_string())
+            Response::Error("ERR The specified keys must contain string values".to_string())
         );
     }
 
@@ -1835,7 +1842,7 @@ mod tests {
                 &cmd(&["LCS", "a", "b", "IDX", "MINMATCHLEN", "x"]),
                 &mut state()
             ),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -1843,7 +1850,7 @@ mod tests {
     fn lcs_unknown_option_is_syntax_error() {
         assert_eq!(
             dispatch(&cmd(&["LCS", "a", "b", "FOO"]), &mut state()),
-            Value::Error("ERR syntax error".to_string())
+            Response::Error("ERR syntax error".to_string())
         );
     }
 
@@ -1851,7 +1858,7 @@ mod tests {
     fn lcs_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["LCS", "k1"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'lcs' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'lcs' command".to_string())
         );
     }
 
@@ -1864,10 +1871,10 @@ mod tests {
         dispatch(&cmd(&["SET", "c", "3"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["MGET", "a", "b", "c"]), &mut state),
-            Value::Array(vec![
-                Value::Bulk(b"1".to_vec()),
-                Value::NullBulk,
-                Value::Bulk(b"3".to_vec()),
+            Response::Array(vec![
+                Response::Bulk(b"1".to_vec()),
+                Response::NullBulk,
+                Response::Bulk(b"3".to_vec()),
             ])
         );
     }
@@ -1879,7 +1886,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["MGET", "s", "l"]), &mut state),
-            Value::Array(vec![Value::Bulk(b"v".to_vec()), Value::NullBulk])
+            Response::Array(vec![Response::Bulk(b"v".to_vec()), Response::NullBulk])
         );
     }
 
@@ -1887,7 +1894,7 @@ mod tests {
     fn mget_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["MGET"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'mget' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'mget' command".to_string())
         );
     }
 
@@ -1898,15 +1905,15 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["MSET", "a", "1", "b", "2"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "a"]), &mut state),
-            Value::Bulk(b"1".to_vec())
+            Response::Bulk(b"1".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "b"]), &mut state),
-            Value::Bulk(b"2".to_vec())
+            Response::Bulk(b"2".to_vec())
         );
     }
 
@@ -1918,7 +1925,7 @@ mod tests {
         dispatch(&cmd(&["MSET", "k", "v2"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -1926,7 +1933,7 @@ mod tests {
     fn mset_odd_arguments_is_error() {
         assert_eq!(
             dispatch(&cmd(&["MSET", "a", "1", "b"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'mset' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'mset' command".to_string())
         );
     }
 
@@ -1937,11 +1944,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["MSETNX", "a", "1", "b", "2"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "b"]), &mut state),
-            Value::Bulk(b"2".to_vec())
+            Response::Bulk(b"2".to_vec())
         );
     }
 
@@ -1951,12 +1958,15 @@ mod tests {
         dispatch(&cmd(&["SET", "b", "old"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["MSETNX", "a", "1", "b", "2"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
-        assert_eq!(dispatch(&cmd(&["GET", "a"]), &mut state), Value::NullBulk);
+        assert_eq!(
+            dispatch(&cmd(&["GET", "a"]), &mut state),
+            Response::NullBulk
+        );
         assert_eq!(
             dispatch(&cmd(&["GET", "b"]), &mut state),
-            Value::Bulk(b"old".to_vec())
+            Response::Bulk(b"old".to_vec())
         );
     }
 
@@ -1964,7 +1974,7 @@ mod tests {
     fn msetnx_odd_arguments_is_error() {
         assert_eq!(
             dispatch(&cmd(&["MSETNX", "a", "1", "b"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'msetnx' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'msetnx' command".to_string())
         );
     }
 
@@ -1975,15 +1985,15 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["PSETEX", "k", "100000", "v"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -1991,7 +2001,7 @@ mod tests {
     fn psetex_zero_is_error() {
         assert_eq!(
             dispatch(&cmd(&["PSETEX", "k", "0", "v"]), &mut state()),
-            Value::Error("ERR invalid expire time in 'psetex' command".to_string())
+            Response::Error("ERR invalid expire time in 'psetex' command".to_string())
         );
     }
 
@@ -2002,11 +2012,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "foo", "bar"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "foo"]), &mut state),
-            Value::Bulk(b"bar".to_vec())
+            Response::Bulk(b"bar".to_vec())
         );
     }
 
@@ -2017,7 +2027,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v2"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v2".to_vec())
+            Response::Bulk(b"v2".to_vec())
         );
     }
 
@@ -2025,7 +2035,7 @@ mod tests {
     fn set_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["SET", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'set' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'set' command".to_string())
         );
     }
 
@@ -2035,7 +2045,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v", "EX", "100"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -2046,7 +2056,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v2", "KEEPTTL"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -2057,7 +2067,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v2"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -2066,11 +2076,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "EXAT", "1"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -2079,15 +2089,15 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "NX"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v2", "NX"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
     }
 
@@ -2096,12 +2106,12 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "XX"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v2", "XX"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
     }
 
@@ -2111,11 +2121,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "old"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "new", "GET"]), &mut state),
-            Value::Bulk(b"old".to_vec())
+            Response::Bulk(b"old".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"new".to_vec())
+            Response::Bulk(b"new".to_vec())
         );
     }
 
@@ -2124,11 +2134,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "GET"]), &mut state),
-            Value::NullBulk
+            Response::NullBulk
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
     }
 
@@ -2138,7 +2148,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "k", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "GET"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -2150,11 +2160,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "old"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "new", "NX", "GET"]), &mut state),
-            Value::Bulk(b"old".to_vec())
+            Response::Bulk(b"old".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"old".to_vec())
+            Response::Bulk(b"old".to_vec())
         );
     }
 
@@ -2163,11 +2173,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "EX", "1", "EX", "100"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -2175,7 +2185,7 @@ mod tests {
     fn set_invalid_expiry_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "EX", "0"]), &mut state()),
-            Value::Error("ERR invalid expire time in 'set' command".to_string())
+            Response::Error("ERR invalid expire time in 'set' command".to_string())
         );
     }
 
@@ -2183,7 +2193,7 @@ mod tests {
     fn set_non_integer_expiry_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SET", "k", "v", "EX", "abc"]), &mut state()),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -2199,7 +2209,7 @@ mod tests {
         ] {
             assert_eq!(
                 dispatch(&cmd(&opts), &mut state),
-                Value::Error("ERR syntax error".to_string()),
+                Response::Error("ERR syntax error".to_string()),
                 "{opts:?}"
             );
         }
@@ -2212,15 +2222,15 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SETEX", "k", "100", "v"]), &mut state),
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -2228,7 +2238,7 @@ mod tests {
     fn setex_zero_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SETEX", "k", "0", "v"]), &mut state()),
-            Value::Error("ERR invalid expire time in 'setex' command".to_string())
+            Response::Error("ERR invalid expire time in 'setex' command".to_string())
         );
     }
 
@@ -2236,7 +2246,7 @@ mod tests {
     fn setex_non_integer_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SETEX", "k", "abc", "v"]), &mut state()),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -2244,7 +2254,7 @@ mod tests {
     fn setex_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["SETEX", "k", "100"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'setex' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'setex' command".to_string())
         );
     }
 
@@ -2255,11 +2265,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SETNX", "k", "v"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v".to_vec())
+            Response::Bulk(b"v".to_vec())
         );
     }
 
@@ -2269,11 +2279,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SETNX", "k", "v2"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "k"]), &mut state),
-            Value::Bulk(b"v1".to_vec())
+            Response::Bulk(b"v1".to_vec())
         );
     }
 
@@ -2281,7 +2291,7 @@ mod tests {
     fn setnx_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["SETNX", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'setnx' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'setnx' command".to_string())
         );
     }
 
@@ -2293,11 +2303,11 @@ mod tests {
         dispatch(&cmd(&["SET", "s", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "s", "6", "Redis"]), &mut state),
-            Value::Integer(11)
+            Response::Integer(11)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "s"]), &mut state),
-            Value::Bulk(b"Hello Redis".to_vec())
+            Response::Bulk(b"Hello Redis".to_vec())
         );
     }
 
@@ -2306,11 +2316,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "pad", "5", "xyz"]), &mut state),
-            Value::Integer(8)
+            Response::Integer(8)
         );
         assert_eq!(
             dispatch(&cmd(&["GET", "pad"]), &mut state),
-            Value::Bulk(vec![0, 0, 0, 0, 0, b'x', b'y', b'z'])
+            Response::Bulk(vec![0, 0, 0, 0, 0, b'x', b'y', b'z'])
         );
     }
 
@@ -2319,11 +2329,11 @@ mod tests {
         let mut state = state();
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "e", "0", ""]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "e"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -2333,7 +2343,7 @@ mod tests {
         dispatch(&cmd(&["SET", "e", "abc"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "e", "0", ""]), &mut state),
-            Value::Integer(3)
+            Response::Integer(3)
         );
     }
 
@@ -2341,7 +2351,7 @@ mod tests {
     fn setrange_negative_offset_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "s", "-1", "x"]), &mut state()),
-            Value::Error("ERR offset is out of range".to_string())
+            Response::Error("ERR offset is out of range".to_string())
         );
     }
 
@@ -2349,7 +2359,7 @@ mod tests {
     fn setrange_non_integer_offset_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "s", "a", "x"]), &mut state()),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -2359,7 +2369,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "l", "x"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "l", "0", "x"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -2369,7 +2379,7 @@ mod tests {
     fn setrange_exceeding_max_size_is_error() {
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "big", "536870912", "x"]), &mut state()),
-            Value::Error(
+            Response::Error(
                 "ERR string exceeds maximum allowed size (proto-max-bulk-len)".to_string()
             )
         );
@@ -2379,7 +2389,7 @@ mod tests {
     fn setrange_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["SETRANGE", "k", "0"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'setrange' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'setrange' command".to_string())
         );
     }
 
@@ -2391,7 +2401,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "hello"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["STRLEN", "k"]), &mut state),
-            Value::Integer(5)
+            Response::Integer(5)
         );
     }
 
@@ -2399,7 +2409,7 @@ mod tests {
     fn strlen_missing_is_zero() {
         assert_eq!(
             dispatch(&cmd(&["STRLEN", "nope"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -2409,7 +2419,7 @@ mod tests {
         dispatch(&cmd(&["RPUSH", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["STRLEN", "k"]), &mut state),
-            Value::Error(
+            Response::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".to_string()
             )
         );
@@ -2419,7 +2429,7 @@ mod tests {
     fn strlen_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["STRLEN"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'strlen' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'strlen' command".to_string())
         );
     }
 
@@ -2431,11 +2441,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "Hello World"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["SUBSTR", "k", "0", "4"]), &mut state),
-            Value::Bulk(b"Hello".to_vec())
+            Response::Bulk(b"Hello".to_vec())
         );
         assert_eq!(
             dispatch(&cmd(&["SUBSTR", "k", "-5", "-1"]), &mut state),
-            Value::Bulk(b"World".to_vec())
+            Response::Bulk(b"World".to_vec())
         );
     }
 }

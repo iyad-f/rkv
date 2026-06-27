@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, Context, errors};
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 use crate::store::{Expiry, Store};
 
@@ -15,7 +15,7 @@ pub const DEL: Command = Command {
     handler: del,
 };
 
-fn del(ctx: &mut Context, state: &mut State) -> Value {
+fn del(ctx: &mut Context, state: &mut State) -> Response {
     let mut count = 0;
 
     for key in ctx.args {
@@ -24,7 +24,7 @@ fn del(ctx: &mut Context, state: &mut State) -> Value {
         }
     }
 
-    Value::Integer(count)
+    Response::Integer(count)
 }
 
 /// `EXISTS key [key ...]` replies with how many of the given keys exist.
@@ -36,7 +36,7 @@ pub const EXISTS: Command = Command {
     handler: exists,
 };
 
-fn exists(ctx: &mut Context, state: &mut State) -> Value {
+fn exists(ctx: &mut Context, state: &mut State) -> Response {
     let mut count = 0;
 
     for key in ctx.args {
@@ -45,7 +45,7 @@ fn exists(ctx: &mut Context, state: &mut State) -> Value {
         }
     }
 
-    Value::Integer(count)
+    Response::Integer(count)
 }
 
 /// `EXPIRE key seconds` sets `key` to expire after `seconds`, replying with `1`
@@ -58,7 +58,7 @@ pub const EXPIRE: Command = Command {
     handler: expire,
 };
 
-fn expire(ctx: &mut Context, state: &mut State) -> Value {
+fn expire(ctx: &mut Context, state: &mut State) -> Response {
     let [key, seconds] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -78,7 +78,7 @@ fn expire(ctx: &mut Context, state: &mut State) -> Value {
 
     // Log the absolute deadline so a replay does not re-derive it from a later
     // clock.
-    if matches!(reply, Value::Integer(1)) {
+    if matches!(reply, Response::Integer(1)) {
         ctx.rewrite = Some(vec![
             b"PEXPIREAT".to_vec(),
             key.clone(),
@@ -100,7 +100,7 @@ pub const PEXPIREAT: Command = Command {
     handler: pexpireat,
 };
 
-fn pexpireat(ctx: &mut Context, state: &mut State) -> Value {
+fn pexpireat(ctx: &mut Context, state: &mut State) -> Response {
     let [key, when] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
@@ -122,17 +122,17 @@ pub const TTL: Command = Command {
     handler: ttl,
 };
 
-fn ttl(ctx: &mut Context, state: &mut State) -> Value {
+fn ttl(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
     match state.store.expiry(key) {
-        Expiry::Missing => Value::Integer(-2),
-        Expiry::Never => Value::Integer(-1),
+        Expiry::Missing => Response::Integer(-2),
+        Expiry::Never => Response::Integer(-1),
         Expiry::At(deadline) => {
             let remaining = (deadline - Store::now()).max(0);
-            Value::Integer((remaining + 500) / 1000)
+            Response::Integer((remaining + 500) / 1000)
         }
     }
 }
@@ -147,20 +147,20 @@ pub const PERSIST: Command = Command {
     handler: persist,
 };
 
-fn persist(ctx: &mut Context, state: &mut State) -> Value {
+fn persist(ctx: &mut Context, state: &mut State) -> Response {
     let [key] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
-    Value::Integer(state.store.persist(key) as i64)
+    Response::Integer(state.store.persist(key) as i64)
 }
 
 /// Applies the absolute expiry `when` (milliseconds since the Unix epoch) to
 /// `key`, deleting it if the deadline has already passed. Replies `1` if the key
 /// exists and `0` if it does not.
-fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
+fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Response {
     if !state.store.contains_key(key) {
-        return Value::Integer(0);
+        return Response::Integer(0);
     }
 
     if Store::is_expired(when) {
@@ -169,13 +169,13 @@ fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Value {
         state.store.set_expiry(key, when);
     }
 
-    Value::Integer(1)
+    Response::Integer(1)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
-    use crate::resp::Value;
+    use crate::resp::Response;
     use crate::store::Store;
 
     // DEL
@@ -186,16 +186,19 @@ mod tests {
         dispatch(&cmd(&["SET", "foo", "bar"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DEL", "foo"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
-        assert_eq!(dispatch(&cmd(&["GET", "foo"]), &mut state), Value::NullBulk);
+        assert_eq!(
+            dispatch(&cmd(&["GET", "foo"]), &mut state),
+            Response::NullBulk
+        );
     }
 
     #[test]
     fn del_missing_key_returns_zero() {
         assert_eq!(
             dispatch(&cmd(&["DEL", "missing"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -205,7 +208,7 @@ mod tests {
         dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DEL", "a", "b", "c"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -215,7 +218,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["DEL", "k", "k"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -227,7 +230,7 @@ mod tests {
         dispatch(&cmd(&["SET", "foo", "bar"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "foo"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -235,7 +238,7 @@ mod tests {
     fn exists_missing_key_returns_zero() {
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "nope"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -245,7 +248,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k", "k"]), &mut state),
-            Value::Integer(2)
+            Response::Integer(2)
         );
     }
 
@@ -255,7 +258,7 @@ mod tests {
         dispatch(&cmd(&["SET", "a", "1"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "a", "b", "c"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -267,7 +270,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
     }
 
@@ -275,7 +278,7 @@ mod tests {
     fn expire_missing_key_returns_zero() {
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -285,11 +288,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k", "-1"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -299,7 +302,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k", "abc"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -309,7 +312,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k", "9999999999999999"]), &mut state),
-            Value::Error("ERR invalid expire time in 'expire' command".to_string())
+            Response::Error("ERR invalid expire time in 'expire' command".to_string())
         );
     }
 
@@ -317,7 +320,7 @@ mod tests {
     fn expire_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["EXPIRE", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'expire' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'expire' command".to_string())
         );
     }
 
@@ -330,11 +333,11 @@ mod tests {
         let when = (Store::now() + 100_000).to_string();
         assert_eq!(
             dispatch(&cmd(&["PEXPIREAT", "k", &when]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -344,11 +347,11 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["PEXPIREAT", "k", "1"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["EXISTS", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -356,7 +359,7 @@ mod tests {
     fn pexpireat_missing_key_returns_zero() {
         assert_eq!(
             dispatch(&cmd(&["PEXPIREAT", "k", "99999999999999"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -366,7 +369,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["PEXPIREAT", "k", "abc"]), &mut state),
-            Value::Error("ERR value is not an integer or out of range".to_string())
+            Response::Error("ERR value is not an integer or out of range".to_string())
         );
     }
 
@@ -374,7 +377,7 @@ mod tests {
     fn pexpireat_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["PEXPIREAT", "k"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'pexpireat' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'pexpireat' command".to_string())
         );
     }
 
@@ -384,7 +387,7 @@ mod tests {
     fn missing_key_is_negative_two() {
         assert_eq!(
             dispatch(&cmd(&["TTL", "nope"]), &mut state()),
-            Value::Integer(-2)
+            Response::Integer(-2)
         );
     }
 
@@ -394,7 +397,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -405,7 +408,7 @@ mod tests {
         dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(100)
+            Response::Integer(100)
         );
     }
 
@@ -413,7 +416,7 @@ mod tests {
     fn ttl_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["TTL"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'ttl' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'ttl' command".to_string())
         );
     }
 
@@ -426,11 +429,11 @@ mod tests {
         dispatch(&cmd(&["EXPIRE", "k", "100"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["PERSIST", "k"]), &mut state),
-            Value::Integer(1)
+            Response::Integer(1)
         );
         assert_eq!(
             dispatch(&cmd(&["TTL", "k"]), &mut state),
-            Value::Integer(-1)
+            Response::Integer(-1)
         );
     }
 
@@ -440,7 +443,7 @@ mod tests {
         dispatch(&cmd(&["SET", "k", "v"]), &mut state);
         assert_eq!(
             dispatch(&cmd(&["PERSIST", "k"]), &mut state),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -448,7 +451,7 @@ mod tests {
     fn persist_missing_key_returns_zero() {
         assert_eq!(
             dispatch(&cmd(&["PERSIST", "nope"]), &mut state()),
-            Value::Integer(0)
+            Response::Integer(0)
         );
     }
 
@@ -456,7 +459,7 @@ mod tests {
     fn persist_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["PERSIST"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'persist' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'persist' command".to_string())
         );
     }
 }

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::FsyncPolicy;
 use crate::object::Object;
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::store::Store;
 
 /// How often [`FsyncPolicy::EverySec`] syncs.
@@ -278,7 +278,7 @@ fn open_file(path: &Path) -> std::io::Result<File> {
 
 /// Encodes `argv` as a RESP array, the on-disk form of a command.
 fn encode_command(argv: &[Vec<u8>]) -> Vec<u8> {
-    Value::Array(argv.iter().map(|arg| Value::Bulk(arg.clone())).collect()).encode()
+    Response::Array(argv.iter().map(|arg| Response::Bulk(arg.clone())).collect()).encode()
 }
 
 /// Builds the minimal set of commands that recreates the current dataset.

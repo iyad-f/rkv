@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, Context, errors};
-use crate::resp::Value;
+use crate::resp::Response;
 use crate::server::State;
 
 /// `AUTH [username] password` authenticates the connection.
@@ -17,7 +17,7 @@ pub const AUTH: Command = Command {
     handler: auth,
 };
 
-fn auth(ctx: &mut Context, state: &mut State) -> Value {
+fn auth(ctx: &mut Context, state: &mut State) -> Response {
     let (username, password) = match ctx.args {
         [password] => (None, password),
         [username, password] => (Some(username), password),
@@ -31,20 +31,20 @@ fn auth(ctx: &mut Context, state: &mut State) -> Value {
     match &state.config.password {
         // With no password set the default user accepts any password, but the
         // lone-password form still reports the misconfiguration.
-        None if username.is_none() => Value::Error(
+        None if username.is_none() => Response::Error(
             "ERR AUTH <password> called without any password configured for the default user. \
              Are you sure your configuration is correct?"
                 .to_string(),
         ),
         None if is_default => {
             ctx.session.authenticate();
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         }
         Some(required) if is_default && password == required.as_bytes() => {
             ctx.session.authenticate();
-            Value::Simple("OK".to_string())
+            Response::Simple("OK".to_string())
         }
-        _ => Value::Error(
+        _ => Response::Error(
             "WRONGPASS invalid username-password pair or user is disabled.".to_string(),
         ),
     }
@@ -59,12 +59,12 @@ pub const ECHO: Command = Command {
     handler: echo,
 };
 
-fn echo(ctx: &mut Context, _state: &mut State) -> Value {
+fn echo(ctx: &mut Context, _state: &mut State) -> Response {
     let [message] = ctx.args else {
         return errors::wrong_args(ctx.command.name);
     };
 
-    Value::Bulk(message.clone())
+    Response::Bulk(message.clone())
 }
 
 /// `PING [message]` replies with PONG, or echoes the optional message.
@@ -76,10 +76,10 @@ pub const PING: Command = Command {
     handler: ping,
 };
 
-fn ping(ctx: &mut Context, _state: &mut State) -> Value {
+fn ping(ctx: &mut Context, _state: &mut State) -> Response {
     match ctx.args {
-        [] => Value::Simple("PONG".to_string()),
-        [message] => Value::Bulk(message.clone()),
+        [] => Response::Simple("PONG".to_string()),
+        [message] => Response::Bulk(message.clone()),
         _ => errors::wrong_args(ctx.command.name),
     }
 }
@@ -93,9 +93,9 @@ pub const QUIT: Command = Command {
     handler: quit,
 };
 
-fn quit(ctx: &mut Context, _state: &mut State) -> Value {
+fn quit(ctx: &mut Context, _state: &mut State) -> Response {
     ctx.session.request_close();
-    Value::Simple("OK".to_string())
+    Response::Simple("OK".to_string())
 }
 
 /// `RESET` resets the session to its initial state.
@@ -107,15 +107,15 @@ pub const RESET: Command = Command {
     handler: reset,
 };
 
-fn reset(ctx: &mut Context, _state: &mut State) -> Value {
+fn reset(ctx: &mut Context, _state: &mut State) -> Response {
     ctx.session.reset();
-    Value::Simple("RESET".to_string())
+    Response::Simple("RESET".to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::command::test_utils::{cmd, dispatch, state};
-    use crate::resp::Value;
+    use crate::resp::Response;
     use crate::session::Session;
 
     /// State that requires the password `secret`.
@@ -131,7 +131,7 @@ mod tests {
     fn auth_with_no_password_set_reports_misconfiguration() {
         assert_eq!(
             dispatch(&cmd(&["AUTH", "foo"]), &mut state()),
-            Value::Error(
+            Response::Error(
                 "ERR AUTH <password> called without any password configured for the default \
                  user. Are you sure your configuration is correct?"
                     .to_string()
@@ -148,7 +148,7 @@ mod tests {
             &mut session,
         );
 
-        assert_eq!(reply, Value::Simple("OK".to_string()));
+        assert_eq!(reply, Response::Simple("OK".to_string()));
         assert!(session.is_authenticated());
     }
 
@@ -156,7 +156,7 @@ mod tests {
     fn auth_unknown_user_fails() {
         assert_eq!(
             dispatch(&cmd(&["AUTH", "bob", "foo"]), &mut state()),
-            Value::Error(
+            Response::Error(
                 "WRONGPASS invalid username-password pair or user is disabled.".to_string()
             )
         );
@@ -166,7 +166,7 @@ mod tests {
     fn auth_too_many_args_is_syntax_error() {
         assert_eq!(
             dispatch(&cmd(&["AUTH", "a", "b", "c"]), &mut state()),
-            Value::Error("ERR syntax error".to_string())
+            Response::Error("ERR syntax error".to_string())
         );
     }
 
@@ -179,7 +179,7 @@ mod tests {
             &mut session,
         );
 
-        assert_eq!(reply, Value::Simple("OK".to_string()));
+        assert_eq!(reply, Response::Simple("OK".to_string()));
         assert!(session.is_authenticated());
     }
 
@@ -194,7 +194,7 @@ mod tests {
 
         assert_eq!(
             reply,
-            Value::Error(
+            Response::Error(
                 "WRONGPASS invalid username-password pair or user is disabled.".to_string()
             )
         );
@@ -208,14 +208,14 @@ mod tests {
 
         assert_eq!(
             crate::command::dispatch(&cmd(&["PING"]), &mut state, &mut session),
-            Value::Error("NOAUTH Authentication required.".to_string())
+            Response::Error("NOAUTH Authentication required.".to_string())
         );
 
         crate::command::dispatch(&cmd(&["AUTH", "secret"]), &mut state, &mut session);
 
         assert_eq!(
             crate::command::dispatch(&cmd(&["PING"]), &mut state, &mut session),
-            Value::Simple("PONG".to_string())
+            Response::Simple("PONG".to_string())
         );
     }
 
@@ -225,7 +225,7 @@ mod tests {
     fn returns_argument() {
         assert_eq!(
             dispatch(&cmd(&["ECHO", "hello"]), &mut state()),
-            Value::Bulk(b"hello".to_vec())
+            Response::Bulk(b"hello".to_vec())
         );
     }
 
@@ -233,7 +233,7 @@ mod tests {
     fn echo_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["ECHO"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'echo' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'echo' command".to_string())
         );
     }
 
@@ -243,7 +243,7 @@ mod tests {
     fn no_arg_replies_pong() {
         assert_eq!(
             dispatch(&cmd(&["PING"]), &mut state()),
-            Value::Simple("PONG".to_string())
+            Response::Simple("PONG".to_string())
         );
     }
 
@@ -251,7 +251,7 @@ mod tests {
     fn echoes_message() {
         assert_eq!(
             dispatch(&cmd(&["PING", "hi"]), &mut state()),
-            Value::Bulk(b"hi".to_vec())
+            Response::Bulk(b"hi".to_vec())
         );
     }
 
@@ -259,7 +259,7 @@ mod tests {
     fn too_many_args() {
         assert_eq!(
             dispatch(&cmd(&["PING", "a", "b"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'ping' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'ping' command".to_string())
         );
     }
 
@@ -270,7 +270,7 @@ mod tests {
         let mut session = Session::default();
         let reply = crate::command::dispatch(&cmd(&["QUIT"]), &mut state(), &mut session);
 
-        assert_eq!(reply, Value::Simple("OK".to_string()));
+        assert_eq!(reply, Response::Simple("OK".to_string()));
         assert!(session.should_close());
     }
 
@@ -279,7 +279,7 @@ mod tests {
         let mut session = Session::default();
         let reply = crate::command::dispatch(&cmd(&["QUIT", "x", "y"]), &mut state(), &mut session);
 
-        assert_eq!(reply, Value::Simple("OK".to_string()));
+        assert_eq!(reply, Response::Simple("OK".to_string()));
         assert!(session.should_close());
     }
 
@@ -289,7 +289,7 @@ mod tests {
     fn reset_replies_reset() {
         assert_eq!(
             dispatch(&cmd(&["RESET"]), &mut state()),
-            Value::Simple("RESET".to_string())
+            Response::Simple("RESET".to_string())
         );
     }
 
@@ -302,7 +302,7 @@ mod tests {
 
         let reply = crate::command::dispatch(&cmd(&["RESET"]), &mut state, &mut session);
 
-        assert_eq!(reply, Value::Simple("RESET".to_string()));
+        assert_eq!(reply, Response::Simple("RESET".to_string()));
         assert!(!session.is_authenticated());
     }
 
@@ -310,7 +310,7 @@ mod tests {
     fn reset_wrong_args() {
         assert_eq!(
             dispatch(&cmd(&["RESET", "x"]), &mut state()),
-            Value::Error("ERR wrong number of arguments for 'reset' command".to_string())
+            Response::Error("ERR wrong number of arguments for 'reset' command".to_string())
         );
     }
 }

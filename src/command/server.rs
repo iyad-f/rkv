@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{Arity, Command, Context, errors};
+use crate::config;
 use crate::resp::Response;
 use crate::server::State;
 
@@ -57,7 +58,30 @@ fn config_set(args: &[Vec<u8>], state: &mut State) -> Response {
 
     match state.config.set(&key, &value) {
         Ok(()) => Response::Simple("OK".to_string()),
+        Err(config::Error::UnknownKey(_)) => Response::Error(format!(
+            "ERR Unknown option or number of arguments for CONFIG SET - '{key}'"
+        )),
+        Err(config::Error::InvalidValue { kind, .. }) => Response::Error(format!(
+            "ERR CONFIG SET failed (possibly related to argument '{key}') - {}",
+            invalid_value_reason(&kind)
+        )),
         Err(e) => Response::Error(format!("ERR CONFIG SET failed, {e}")),
+    }
+}
+
+/// Explains why a `CONFIG SET` value did not match its setting's expected
+/// [`ValueKind`].
+fn invalid_value_reason(kind: &config::ValueKind) -> String {
+    match kind {
+        config::ValueKind::Integer => "argument couldn't be parsed into an integer".to_string(),
+        config::ValueKind::Memory => "argument must be a memory value".to_string(),
+        config::ValueKind::Bool => "argument must be 'yes' or 'no'".to_string(),
+        config::ValueKind::Enum(values) => {
+            format!(
+                "argument(s) must be one of the following: {}",
+                values.join(", ")
+            )
+        }
     }
 }
 
@@ -180,6 +204,83 @@ mod tests {
             }
             other => panic!("expected an array, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn set_unknown_key_is_error() {
+        assert_eq!(
+            dispatch(&cmd(&["CONFIG", "SET", "totallybogus", "5"]), &mut state()),
+            Response::Error(
+                "ERR Unknown option or number of arguments for CONFIG SET - 'totallybogus'"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn set_bad_integer_is_error() {
+        assert_eq!(
+            dispatch(&cmd(&["CONFIG", "SET", "maxclients", "notanum"]), &mut state()),
+            Response::Error(
+                "ERR CONFIG SET failed (possibly related to argument 'maxclients') - argument couldn't be parsed into an integer"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn set_bad_bool_is_error() {
+        assert_eq!(
+            dispatch(&cmd(&["CONFIG", "SET", "appendonly", "maybe"]), &mut state()),
+            Response::Error(
+                "ERR CONFIG SET failed (possibly related to argument 'appendonly') - argument must be 'yes' or 'no'"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn set_bad_enum_is_error() {
+        assert_eq!(
+            dispatch(&cmd(&["CONFIG", "SET", "appendfsync", "banana"]), &mut state()),
+            Response::Error(
+                "ERR CONFIG SET failed (possibly related to argument 'appendfsync') - argument(s) must be one of the following: everysec, always, no"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn set_bad_memory_is_error() {
+        assert_eq!(
+            dispatch(
+                &cmd(&["CONFIG", "SET", "auto-aof-rewrite-min-size", "notanum"]),
+                &mut state()
+            ),
+            Response::Error(
+                "ERR CONFIG SET failed (possibly related to argument 'auto-aof-rewrite-min-size') - argument must be a memory value"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn set_memory_value_with_unit() {
+        let mut state = state();
+        dispatch(
+            &cmd(&["CONFIG", "SET", "auto-aof-rewrite-min-size", "64mb"]),
+            &mut state,
+        );
+        assert_eq!(
+            dispatch(
+                &cmd(&["CONFIG", "GET", "auto-aof-rewrite-min-size"]),
+                &mut state
+            ),
+            Response::Array(vec![
+                Response::Bulk(b"auto-aof-rewrite-min-size".to_vec()),
+                Response::Bulk(b"67108864".to_vec()),
+            ])
+        );
     }
 
     // DBSIZE

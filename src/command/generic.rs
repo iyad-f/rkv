@@ -20,7 +20,7 @@ fn del(ctx: &mut Context, state: &mut State) -> Response {
     let mut count = 0;
 
     for key in ctx.args {
-        if state.store.remove(key) {
+        if state.store.remove(key).is_some() {
             count += 1;
         }
     }
@@ -173,6 +173,29 @@ fn r#type(ctx: &mut Context, state: &mut State) -> Response {
 
     let type_name = state.store.get(key).map_or("none", Object::type_name);
     Response::Simple(type_name.to_string())
+}
+
+/// `UNLINK key [key ...]` removes the given keys, reclaiming large values on a
+/// background thread rather than inline. Replies with the number removed.
+pub const UNLINK: Command = Command {
+    name: "UNLINK",
+    arity: Arity::Min(2),
+    write: true,
+    auth_required: true,
+    handler: unlink,
+};
+
+fn unlink(ctx: &mut Context, state: &mut State) -> Response {
+    let mut count = 0;
+
+    for key in ctx.args {
+        if let Some(object) = state.store.remove(key) {
+            state.lazy_dropper.drop(object);
+            count += 1;
+        }
+    }
+
+    Response::Integer(count)
 }
 
 /// Applies the absolute expiry `when` (milliseconds since the Unix epoch) to
@@ -518,6 +541,48 @@ mod tests {
         assert_eq!(
             dispatch(&cmd(&["TYPE"]), &mut state()),
             Response::Error("ERR wrong number of arguments for 'type' command".to_string())
+        );
+    }
+
+    // UNLINK
+
+    #[test]
+    fn unlinks_existing_key() {
+        let mut state = state();
+        dispatch(&cmd(&["SET", "foo", "bar"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["UNLINK", "foo"]), &mut state),
+            Response::Integer(1)
+        );
+        assert_eq!(
+            dispatch(&cmd(&["GET", "foo"]), &mut state),
+            Response::NullBulk
+        );
+    }
+
+    #[test]
+    fn unlink_missing_key_returns_zero() {
+        assert_eq!(
+            dispatch(&cmd(&["UNLINK", "missing"]), &mut state()),
+            Response::Integer(0)
+        );
+    }
+
+    #[test]
+    fn unlink_counts_only_present_keys() {
+        let mut state = state();
+        dispatch(&cmd(&["SET", "a", "1"]), &mut state);
+        assert_eq!(
+            dispatch(&cmd(&["UNLINK", "a", "b", "c"]), &mut state),
+            Response::Integer(1)
+        );
+    }
+
+    #[test]
+    fn unlink_wrong_args() {
+        assert_eq!(
+            dispatch(&cmd(&["UNLINK"]), &mut state()),
+            Response::Error("ERR wrong number of arguments for 'unlink' command".to_string())
         );
     }
 }

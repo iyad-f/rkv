@@ -23,4 +23,12 @@ impl Object {
             Self::List(_) => "list",
         }
     }
+
+    /// The effort required to drop this object.
+    pub fn drop_effort(&self) -> usize {
+        match self {
+            Self::String(_) => 1,
+            Self::List(list) => list.len(),
+        }
+    }
 }

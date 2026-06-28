@@ -104,6 +104,7 @@ const COMMANDS: &[Command] = &[
     generic::PEXPIREAT,
     generic::TTL,
     generic::TYPE,
+    generic::UNLINK,
     // List
     list::LINDEX,
     list::LINSERT,

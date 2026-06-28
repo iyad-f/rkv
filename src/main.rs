@@ -4,11 +4,13 @@
 //! rkv, an in-memory key-value store.
 
 mod aof;
+mod background_worker;
 mod client;
 mod command;
 mod config;
 mod dict;
 mod event_loop;
+mod lazy_dropper;
 mod object;
 mod prng;
 mod resp;

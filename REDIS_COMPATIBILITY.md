@@ -89,8 +89,8 @@ This document tracks which commands are implemented.
 | SORT_RO     | No     |
 | TOUCH       | No     |
 | TTL         | Yes    |
-| TYPE        | No     |
-| UNLINK      | No     |
+| TYPE        | Yes    |
+| UNLINK      | Yes    |
 | WAIT        | No     |
 | WAITAOF     | No     |
 
@@ -366,10 +366,10 @@ This document tracks which commands are implemented.
 
 **Total Commands**: 262
 
-- **Fully Implemented**: 51 commands
+- **Fully Implemented**: 53 commands
 - **Partially Implemented**: 1 command
-- **Not Implemented**: 210 commands
+- **Not Implemented**: 208 commands
 
-**Implementation Coverage**: ~19%
+**Implementation Coverage**: ~20%
 
 This compatibility matrix is updated as new commands are implemented in rkv.

@@ -93,13 +93,13 @@ impl Store {
         self.dirty += 1;
     }
 
-    /// Removes `key` and any expiry, returning whether it existed. An expired
-    /// key counts as already gone.
-    pub fn remove(&mut self, key: &[u8]) -> bool {
+    /// Removes `key` and any expiry, returning the removed value, or `None` if it
+    /// did not exist. An expired key counts as already gone.
+    pub fn remove(&mut self, key: &[u8]) -> Option<Object> {
         self.remove_if_expired(key);
         self.deadlines.remove(key);
-        let removed = self.data.remove(key).is_some();
-        if removed {
+        let removed = self.data.remove(key);
+        if removed.is_some() {
             self.dirty += 1;
         }
         removed
@@ -351,7 +351,7 @@ mod tests {
         store.update(b"k".to_vec(), Object::String(b"v2".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
         assert!(store.persist(b"k"));
-        assert!(store.remove(b"k"));
+        assert!(store.remove(b"k").is_some());
 
         assert_eq!(store.dirty(), start + 5);
     }
@@ -361,7 +361,7 @@ mod tests {
         let mut store = Store::new();
         let start = store.dirty();
 
-        assert!(!store.remove(b"missing"));
+        assert!(store.remove(b"missing").is_none());
         assert!(!store.persist(b"missing"));
 
         assert_eq!(store.dirty(), start);

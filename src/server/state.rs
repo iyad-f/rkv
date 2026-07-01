@@ -6,7 +6,7 @@
 use std::hash::{BuildHasher, Hasher, RandomState};
 
 use super::child::{self, Child};
-use crate::{aof::Aof, config::Config, lazy_dropper::LazyDropper, prng::Prng, store::Store};
+use crate::{aof::Aof, config::Config, prng::Prng, store::Store};
 
 /// The shared state commands read and modify.
 pub struct State {
@@ -22,9 +22,6 @@ pub struct State {
     /// The append-only file. Disabled unless persistence is enabled.
     pub aof: Aof,
 
-    /// Drops removed values, offloading large ones off the event loop.
-    pub lazy_dropper: LazyDropper,
-
     /// The background child process, if one is running.
     child: Option<Child>,
 }
@@ -34,12 +31,16 @@ impl State {
     pub fn new(config: Config) -> Self {
         let seed = RandomState::new().build_hasher().finish();
         let aof = Aof::disabled(config.aof_path());
+        let store = Store::new(
+            config.lazy_drop.expire.clone(),
+            config.lazy_drop.server_del.clone(),
+        );
+
         Self {
-            store: Store::new(),
+            store,
             config,
             prng: Prng::new(seed),
             aof,
-            lazy_dropper: LazyDropper::new(),
             child: None,
         }
     }

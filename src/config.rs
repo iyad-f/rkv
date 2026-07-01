@@ -7,7 +7,9 @@
 //! [`Config::default`], the built-in defaults, and are then overridden by a
 //! config file and command-line arguments, in that order.
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::LazyLock;
 
 /// The server's runtime configuration.
@@ -30,6 +32,9 @@ pub struct Config {
 
     /// The append-only file settings.
     pub aof: AofConfig,
+
+    /// The lazy-drop settings.
+    pub lazy_drop: LazyDropConfig,
 }
 
 /// The append-only file settings.
@@ -49,6 +54,19 @@ pub struct AofConfig {
 
     /// The minimum file size, in bytes, before an automatic rewrite triggers.
     pub auto_rewrite_min_size: u64,
+}
+
+/// The lazy-drop settings, controlling which deletions drop their values on the
+/// background worker instead of inline.
+pub struct LazyDropConfig {
+    /// Whether `DEL` drops removed values lazily.
+    pub user_del: bool,
+
+    /// Whether expired keys are dropped lazily.
+    pub expire: Rc<Cell<bool>>,
+
+    /// Whether values a write replaces are dropped lazily.
+    pub server_del: Rc<Cell<bool>>,
 }
 
 /// When the append-only file is flushed to disk.
@@ -239,6 +257,36 @@ const SETTINGS: &[Setting] = &[
         },
         get: |config| config.aof.auto_rewrite_min_size.to_string(),
     },
+    Setting {
+        name: "lazyfree-lazy-user-del",
+        set: |config, value| {
+            config.lazy_drop.user_del = parse_bool(value).map_err(|_| ValueKind::Bool)?;
+            Ok(())
+        },
+        get: |config| format_bool(config.lazy_drop.user_del),
+    },
+    Setting {
+        name: "lazyfree-lazy-expire",
+        set: |config, value| {
+            config
+                .lazy_drop
+                .expire
+                .set(parse_bool(value).map_err(|_| ValueKind::Bool)?);
+            Ok(())
+        },
+        get: |config| format_bool(config.lazy_drop.expire.get()),
+    },
+    Setting {
+        name: "lazyfree-lazy-server-del",
+        set: |config, value| {
+            config
+                .lazy_drop
+                .server_del
+                .set(parse_bool(value).map_err(|_| ValueKind::Bool)?);
+            Ok(())
+        },
+        get: |config| format_bool(config.lazy_drop.server_del.get()),
+    },
 ];
 
 /// Maps each setting name to its [`Setting`].
@@ -258,6 +306,17 @@ impl Default for Config {
             dir: ".".to_string(),
             password: None,
             aof: AofConfig::default(),
+            lazy_drop: LazyDropConfig::default(),
+        }
+    }
+}
+
+impl Default for LazyDropConfig {
+    fn default() -> Self {
+        Self {
+            user_del: false,
+            expire: Rc::new(Cell::new(false)),
+            server_del: Rc::new(Cell::new(false)),
         }
     }
 }

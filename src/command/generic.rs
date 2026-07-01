@@ -20,7 +20,7 @@ fn del(ctx: &mut Context, state: &mut State) -> Response {
     let mut count = 0;
 
     for key in ctx.args {
-        if state.store.remove(key).is_some() {
+        if state.store.remove(key, state.config.lazy_drop.user_del) {
             count += 1;
         }
     }
@@ -189,8 +189,7 @@ fn unlink(ctx: &mut Context, state: &mut State) -> Response {
     let mut count = 0;
 
     for key in ctx.args {
-        if let Some(object) = state.store.remove(key) {
-            state.lazy_dropper.drop(object);
+        if state.store.remove(key, true) {
             count += 1;
         }
     }
@@ -207,7 +206,7 @@ fn set_expiry_at(state: &mut State, key: &[u8], when: i64) -> Response {
     }
 
     if Store::is_expired(when) {
-        state.store.remove(key);
+        state.store.remove_expired(key);
     } else {
         state.store.set_expiry(key, when);
     }

@@ -283,6 +283,44 @@ mod tests {
         );
     }
 
+    const LAZYFREE_KEYS: [&str; 3] = [
+        "lazyfree-lazy-user-del",
+        "lazyfree-lazy-expire",
+        "lazyfree-lazy-server-del",
+    ];
+
+    #[test]
+    fn lazyfree_flags_default_to_no() {
+        let mut state = state();
+        for key in LAZYFREE_KEYS {
+            assert_eq!(
+                dispatch(&cmd(&["CONFIG", "GET", key]), &mut state),
+                Response::Array(vec![
+                    Response::Bulk(key.as_bytes().to_vec()),
+                    Response::Bulk(b"no".to_vec()),
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn lazyfree_flags_round_trip() {
+        let mut state = state();
+        for key in LAZYFREE_KEYS {
+            assert_eq!(
+                dispatch(&cmd(&["CONFIG", "SET", key, "yes"]), &mut state),
+                Response::Simple("OK".to_string())
+            );
+            assert_eq!(
+                dispatch(&cmd(&["CONFIG", "GET", key]), &mut state),
+                Response::Array(vec![
+                    Response::Bulk(key.as_bytes().to_vec()),
+                    Response::Bulk(b"yes".to_vec()),
+                ])
+            );
+        }
+    }
+
     // DBSIZE
 
     #[test]

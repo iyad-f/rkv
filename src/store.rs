@@ -3,9 +3,12 @@
 
 //! The key-value store and the expiry deadlines that drive key expiration.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::dict::Dict;
+use crate::dropper::Dropper;
 use crate::object::Object;
 use crate::prng::Prng;
 
@@ -32,15 +35,27 @@ pub struct Store {
 
     /// A counter bumped on every change to the keyspace.
     dirty: u64,
+
+    /// Drops objects the store removes or replaces.
+    dropper: Dropper,
+
+    /// Whether expired keys are dropped lazily.
+    lazy_expire: Rc<Cell<bool>>,
+
+    /// Whether values a write replaces are dropped lazily.
+    lazy_server_del: Rc<Cell<bool>>,
 }
 
 impl Store {
     /// Creates an empty store.
-    pub fn new() -> Self {
+    pub fn new(lazy_expire: Rc<Cell<bool>>, lazy_server_del: Rc<Cell<bool>>) -> Self {
         Self {
             data: Dict::new(16),
             deadlines: Dict::new(16),
             dirty: 0,
+            dropper: Dropper::new(),
+            lazy_expire,
+            lazy_server_del,
         }
     }
 
@@ -83,26 +98,47 @@ impl Store {
     /// Stores `value` at `key`, discarding any existing expiry.
     pub fn set(&mut self, key: Vec<u8>, value: Object) {
         self.deadlines.remove(&key);
-        self.data.insert(key, value);
+        let lazy = self.lazy_server_del.get();
+        if let Some(old) = self.data.insert(key, value) {
+            self.dropper.drop_object(old, lazy);
+        }
         self.dirty += 1;
     }
 
     /// Stores `value` at `key`, preserving any existing expiry.
     pub fn update(&mut self, key: Vec<u8>, value: Object) {
-        self.data.insert(key, value);
+        let lazy = self.lazy_server_del.get();
+        if let Some(old) = self.data.insert(key, value) {
+            self.dropper.drop_object(old, lazy);
+        }
         self.dirty += 1;
     }
 
-    /// Removes `key` and any expiry, returning the removed value, or `None` if it
-    /// did not exist. An expired key counts as already gone.
-    pub fn remove(&mut self, key: &[u8]) -> Option<Object> {
+    /// Removes `key` and any expiry, dropping its value lazily when `lazy` is set.
+    /// Returns whether a live key was removed, treating an expired key as already
+    /// gone.
+    pub fn remove(&mut self, key: &[u8], lazy: bool) -> bool {
         self.remove_if_expired(key);
         self.deadlines.remove(key);
-        let removed = self.data.remove(key);
-        if removed.is_some() {
+        if let Some(object) = self.data.remove(key) {
+            self.dropper.drop_object(object, lazy);
             self.dirty += 1;
+            true
+        } else {
+            false
         }
-        removed
+    }
+
+    /// Removes `key` as a server-side deletion, dropping its value lazily when
+    /// configured. Returns whether a live key was removed.
+    pub fn remove_server(&mut self, key: &[u8]) -> bool {
+        self.remove(key, self.lazy_server_del.get())
+    }
+
+    /// Removes `key` as an expiration, dropping its value lazily when configured.
+    /// Returns whether a live key was removed.
+    pub fn remove_expired(&mut self, key: &[u8]) -> bool {
+        self.remove(key, self.lazy_expire.get())
     }
 
     /// Sets `key`'s expiry to the absolute `deadline`, in milliseconds since
@@ -223,14 +259,17 @@ impl Store {
 
     /// Removes `key` from both the value and deadline maps.
     fn remove_entry(&mut self, key: &[u8]) {
-        self.data.remove(key);
+        let lazy = self.lazy_expire.get();
+        if let Some(object) = self.data.remove(key) {
+            self.dropper.drop_object(object, lazy);
+        }
         self.deadlines.remove(key);
     }
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Self::new()
+        Self::new(Rc::new(Cell::new(false)), Rc::new(Cell::new(false)))
     }
 }
 
@@ -240,7 +279,7 @@ mod tests {
 
     #[test]
     fn read_lazily_expires_a_past_deadline() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", 1);
 
@@ -250,7 +289,7 @@ mod tests {
 
     #[test]
     fn read_keeps_a_future_deadline() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
@@ -259,7 +298,7 @@ mod tests {
 
     #[test]
     fn set_clears_an_existing_expiry() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
@@ -270,7 +309,7 @@ mod tests {
 
     #[test]
     fn update_preserves_an_existing_expiry() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
 
@@ -281,7 +320,7 @@ mod tests {
 
     #[test]
     fn persist_reports_whether_an_expiry_was_removed() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         assert!(!store.persist(b"k"));
 
@@ -292,7 +331,7 @@ mod tests {
 
     #[test]
     fn expire_cycle_reaps_a_past_deadline() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut prng = Prng::new(0);
 
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
@@ -305,7 +344,7 @@ mod tests {
 
     #[test]
     fn expire_cycle_keeps_a_future_deadline() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut prng = Prng::new(0);
 
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
@@ -318,7 +357,7 @@ mod tests {
 
     #[test]
     fn expire_cycle_leaves_keys_without_a_deadline() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut prng = Prng::new(0);
 
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
@@ -329,7 +368,7 @@ mod tests {
 
     #[test]
     fn expire_cycle_reaps_past_the_sample_size_when_mostly_stale() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut prng = Prng::new(0);
 
         for i in 0..100u8 {
@@ -344,24 +383,24 @@ mod tests {
 
     #[test]
     fn dirty_counts_effective_changes() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let start = store.dirty();
 
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.update(b"k".to_vec(), Object::String(b"v2".to_vec()));
         store.set_expiry(b"k", Store::now() + 100_000);
         assert!(store.persist(b"k"));
-        assert!(store.remove(b"k").is_some());
+        assert!(store.remove_server(b"k"));
 
         assert_eq!(store.dirty(), start + 5);
     }
 
     #[test]
     fn dirty_ignores_no_op_changes() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let start = store.dirty();
 
-        assert!(store.remove(b"missing").is_none());
+        assert!(!store.remove_server(b"missing"));
         assert!(!store.persist(b"missing"));
 
         assert_eq!(store.dirty(), start);
@@ -369,7 +408,7 @@ mod tests {
 
     #[test]
     fn dirty_ignores_expiry_eviction() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         let mut prng = Prng::new(0);
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", 1);
@@ -383,7 +422,7 @@ mod tests {
 
     #[test]
     fn iter_skips_expired_keys() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"live".to_vec(), Object::String(b"b".to_vec()));
         store.set(b"dead".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"dead", 1);

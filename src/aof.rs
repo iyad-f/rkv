@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn snapshot_emits_a_set_per_string_key() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
 
         assert_eq!(
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn snapshot_records_expiry_as_pexpireat() {
-        let mut store = Store::new();
+        let mut store = Store::default();
         store.set(b"k".to_vec(), Object::String(b"v".to_vec()));
         store.set_expiry(b"k", 9_999_999_999_999);
 

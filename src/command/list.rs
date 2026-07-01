@@ -252,7 +252,7 @@ fn ltrim(ctx: &mut Context, state: &mut State) -> Response {
 
     if start > stop {
         // Nothing is kept, so drop the key entirely.
-        state.store.remove(key);
+        state.store.remove_server(key);
     } else {
         list.drain(stop as usize + 1..);
         list.drain(..start as usize);
@@ -353,7 +353,7 @@ fn lrem(ctx: &mut Context, state: &mut State) -> Response {
 
     if removed > 0 {
         if list.is_empty() {
-            state.store.remove(key);
+            state.store.remove_server(key);
         } else {
             state.store.incr_dirty();
         }
@@ -554,7 +554,7 @@ fn lmpop(ctx: &mut Context, state: &mut State) -> Response {
             .map(Response::Bulk)
             .collect();
         if list.is_empty() {
-            state.store.remove(key);
+            state.store.remove_server(key);
         } else {
             state.store.incr_dirty();
         }
@@ -689,7 +689,7 @@ fn move_element(
             return Response::NullBulk;
         };
         if list.is_empty() {
-            state.store.remove(source);
+            state.store.remove_server(source);
         } else {
             state.store.incr_dirty();
         }
@@ -769,7 +769,7 @@ fn pop(ctx: &mut Context, state: &mut State, end: End) -> Response {
 
     // Drop the key once its last element is gone, rather than leave an empty list.
     if list.is_empty() {
-        state.store.remove(key);
+        state.store.remove_server(key);
     } else {
         state.store.incr_dirty();
     }

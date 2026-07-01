@@ -117,7 +117,7 @@ fn getdel(ctx: &mut Context, state: &mut State) -> Response {
     match state.store.get(key) {
         Some(Object::String(bytes)) => {
             let value = bytes.clone();
-            state.store.remove(key);
+            state.store.remove(key, false);
             Response::Bulk(value)
         }
         Some(_) => errors::wrong_type(),
@@ -178,7 +178,7 @@ fn getex(ctx: &mut Context, state: &mut State) -> Response {
         }
         Expiry::At(deadline) => {
             if Store::is_expired(deadline) {
-                state.store.remove(key);
+                state.store.remove_expired(key);
             } else {
                 state.store.set_expiry(key, deadline);
             }
@@ -947,7 +947,7 @@ fn store_string(state: &mut State, key: &[u8], value: &[u8], expiry: Expiry) {
     if let Expiry::At(deadline) = expiry
         && Store::is_expired(deadline)
     {
-        state.store.remove(key);
+        state.store.remove_server(key);
         return;
     }
 
